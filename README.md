@@ -1,20 +1,26 @@
-#  ChronosAI — Deterministic Time-Travel Debugger, Shadow Firewall & Subgraph Cache for AI Agents
+<div align="center">
 
-#  ChronosAI
+# ⏱️ ChronosAI
 ### Deterministic Time-Travel Debugger, Shadow Firewall & Subgraph Cache for Autonomous AI Agents
 
-##  Visão Geral (Por que este projeto vale milhões)
+[![License](https://img.shields.io/badge/License-Apache_2.0-indigo.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/Control_Plane-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
+[![SQLite SAVEPOINT](https://img.shields.io/badge/Sandbox-SQLite_SAVEPOINT-0ea5e9.svg)](chronos/sandbox_db.py)
+[![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0-8b5cf6.svg)](chronos/mcp_server.py)
+[![Tests](https://img.shields.io/badge/Tests-6%2F6_Passing-10b981.svg)](test_chronos.py)
 
 **[English](#-overview-english) • [Português](#-visão-geral-português)**
 
-O **ChronosAI** resolve os três problemas em uma única camada de *Runtime Control Plane*:
-* ** Deterministic Time-Travel Fork (`chronos/engine.py`):** Clona os passos `1 .. N-1` a partir de snapshots imutáveis em **0ms e 0 tokens ($0.00)**, permitindo editar o prompt/payload do passo `N` e continuar a execução com segurança.
-* ** ShadowFirewall (`chronos/firewall.py`):** Intercepta chamadas de ferramentas (`SQL`, `Bash`, `Stripe`, `PII`) antes de tocarem a produção, simula o *Blast Radius* em um ambiente *shadow* e bloqueia mutações destrutivas automaticamente.
-* ** Semantic Subgraph Cache (`chronos/cache.py`):** Endereçamento por conteúdo (`SHA-256` normalizado) de sub-rotinas de agentes, reduzindo latência e custo de API em até 80%.
+<br />
+
+<img src="docs/chronos-studio-preview.png" alt="ChronosAI Studio — Deterministic Time-Travel & SQLite SAVEPOINT Firewall" width="100%" />
+
+</div>
 
 ---
 
-##  Como Executar o ChronosAI Studio
+## 🌍 Overview (English)
 
 > **"The Deterministic Git + Zero-Trust Firewall for Production AI Agents."**
 
@@ -24,9 +30,10 @@ As enterprises transition from simple chatbots to **Autonomous Agents** capable 
 3. **Redundant Inference Spend:** Up to 80% of agent workflows repeat identical data-fetching and reasoning subgraphs.
 
 **ChronosAI** solves all three in a lightweight, drop-in runtime:
-- ** Transactional Shadow Firewall (`chronos/sandbox_db.py` & `chronos/firewall.py`):** Executes candidate SQL queries inside an isolated **`SAVEPOINT`**, inspects `EXPLAIN QUERY PLAN` for full-table scans, measures exact row mutations and financial impact, and executes an automatic **`ROLLBACK TO SAVEPOINT`** before production data is harmed.
-- ** Deterministic Time-Travel Fork (`chronos/engine.py`):** Clones Steps `1 .. N-1` from immutable WAL snapshots in **1ms at $0.00 (0 tokens)**, allowing engineers to patch Step `N` and resume execution deterministically.
-- ** Semantic Subgraph Cache (`chronos/cache.py`):** Content-addressable (`SHA-256`) intent normalization that serves validated agent sub-routines in `2ms`.
+- **🛡️ Transactional Shadow Firewall ([`chronos/sandbox_db.py`](chronos/sandbox_db.py) & [`chronos/firewall.py`](chronos/firewall.py)):** Executes candidate SQL queries inside an isolated **`SAVEPOINT`**, inspects `EXPLAIN QUERY PLAN` for full-table scans, measures exact row mutations and financial impact, and executes an automatic **`ROLLBACK TO SAVEPOINT`** before production data is harmed.
+- **⏪ Deterministic Time-Travel Fork ([`chronos/engine.py`](chronos/engine.py)):** Clones Steps `1 .. N-1` from immutable WAL snapshots in **1ms at $0.00 (0 tokens)**, allowing engineers to patch Step `N` and resume execution deterministically.
+- **🔌 Official MCP Server ([`chronos/mcp_server.py`](chronos/mcp_server.py)):** Exposes Zero-Trust SQLite `SAVEPOINT` validation and Time-Travel replay over **Model Context Protocol (JSON-RPC 2.0)** for Cursor, Claude Desktop, and Antigravity.
+- **⚡ Semantic Subgraph Cache ([`chronos/cache.py`](chronos/cache.py)):** Content-addressable (`SHA-256`) intent normalization that serves validated agent sub-routines in `2ms`.
 
 ### Architecture
 
@@ -48,14 +55,35 @@ flowchart LR
 
 > **"O Freio de Emergência + Máquina do Tempo para Agentes de IA em Produção."**
 
-O **ChronosAI** é uma plataforma de governança, auditoria e replay determinístico para agentes autônomos:
+O **ChronosAI** é uma plataforma open-core de governança, auditoria e replay determinístico para agentes autônomos:
 1. **Shadow Firewall Transacional (`SAVEPOINT`):** Antes que uma query SQL gerada pela IA altere o banco de dados de produção, o Chronos testa a query dentro de um `SAVEPOINT` real no SQLite, analisa o `EXPLAIN QUERY PLAN` e, se detectar mutação em massa (como um `UPDATE` sem `WHERE` ou `DROP TABLE`), executa **`ROLLBACK` automático** em milissegundos.
 2. **Time-Travel Debugging (Máquina do Tempo):** Se o agente falhar ou for bloqueado no Passo #5, você não precisa gastar tokens refazendo os Passos #1 a #4. O Chronos restaura a memória congelada em **1ms com 0 tokens gastos** e executa apenas a partir do passo corrigido.
-3. **Exportação Portável (`.chronos`):** Exporte qualquer incidente de produção em um arquivo `.chronos.json` autocontido para reproduzir o bug localmente.
+3. **Agente de IA ao Vivo + Servidor MCP:** Digite comandos em linguagem natural diretamente no Studio ou conecte o servidor MCP (`python -m chronos.mcp_server`) no **Cursor / Claude Desktop**.
 
 ---
 
-##  Exemplo de Uso do SDK Python (`chronos/sdk.py`)
+## 🚀 Quickstart (Como Rodar em 30 Segundos)
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/FJSolution/chronosIA.git
+cd chronosIA
+
+# 2. Install in editable mode
+pip install -e ".[dev]"
+
+# 3. Run the automated End-to-End Test Suite
+pytest -v
+
+# 4. Launch the Chronos Studio Control Plane
+python -m uvicorn server:app --reload --port 8000
+```
+
+Abra **`http://127.0.0.1:8000`** no seu navegador para acessar o **Chronos Studio**.
+
+---
+
+## 💻 SDK Usage (Integração em 2 Linhas)
 
 ```python
 from chronos import ChronosSDK
@@ -73,13 +101,15 @@ with sdk.trace_run(agent_name="FinOps-Agent", scenario="Order Refund #9921") as 
 
 ---
 
-##  Estrutura do Projeto
+## 📂 Estrutura do Projeto
 
 | Arquivo | Descrição |
 | :--- | :--- |
 | [`chronos/engine.py`](chronos/engine.py) | Motor de grafos DAG, gravação de snapshots e `fork_from_step` (Time-Travel). |
 | [`chronos/sandbox_db.py`](chronos/sandbox_db.py) | Banco SQLite real (`250 pedidos`) com execução isolada via `SAVEPOINT` / `ROLLBACK` e `EXPLAIN QUERY PLAN`. |
 | [`chronos/firewall.py`](chronos/firewall.py) | Motor de regras Zero-Trust (`SQL-001`, `SQL-002`, `FIN-001`, `SYS-001`, `SEC-001`). |
+| [`chronos/llm_agent.py`](chronos/llm_agent.py) | Agente de IA ao vivo multi-provedor (Gemini, OpenAI, Ollama e motor NL-to-SQL nativo). |
+| [`chronos/mcp_server.py`](chronos/mcp_server.py) | Servidor oficial **Model Context Protocol (JSON-RPC 2.0)** via `stdio` e HTTP. |
 | [`chronos/cache.py`](chronos/cache.py) | Cache semântico endereçado por conteúdo (`SHA-256`) com cálculo de ROI. |
 | [`chronos/storage.py`](chronos/storage.py) | Persistência em SQLite (`PRAGMA journal_mode=WAL`) e exportador de pacotes `.chronos.json`. |
 | [`chronos/sdk.py`](chronos/sdk.py) | Decoradores Python (`@sdk.step`, `sdk.trace_run`) para fácil integração. |
