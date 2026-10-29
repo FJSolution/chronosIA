@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from chronos.engine import ChronosEngine
 from chronos.llm_agent import LiveLLMAgent
 from chronos.mcp_server import ChronosMCPServer, MCP_TOOLS
+from chronos.integrations import ChronosToolInterceptor, INTEGRATION_SNIPPETS
 from chronos.scenarios import (
     run_finops_incident_scenario,
     continue_forked_finops_run,
@@ -20,14 +21,15 @@ from chronos.scenarios import (
 
 app = FastAPI(
     title="ChronosAI Control Plane & MCP Server",
-    description="Deterministic Time-Travel Debugger, SQLite SAVEPOINT Shadow Firewall, Live LLM Runner & MCP Server",
-    version="0.3.0",
+    description="Deterministic Time-Travel Debugger, SQLite SAVEPOINT Shadow Firewall, Semantic Vector Cache, Self-Healing Interceptor & MCP Server",
+    version="0.4.0",
 )
 
 engine = ChronosEngine()
 engine.sandbox_db.reset_seed_data()
 live_agent = LiveLLMAgent(engine)
 mcp_server = ChronosMCPServer(engine)
+interceptor = ChronosToolInterceptor(engine, self_heal=True)
 
 # Seed initial production traces
 _initial_finops = run_finops_incident_scenario(engine, use_cache=True)
@@ -95,6 +97,23 @@ def run_live_agent_prompt(req: LivePromptRequest):
     return {
         "run": run.to_dict(),
         "metrics": engine.get_global_metrics(),
+    }
+
+
+@app.post("/api/agent/self-heal")
+def run_self_healing_agent(req: SimulateScenarioRequest):
+    run = interceptor.run_self_healing_demo(scenario_type=req.scenario_type)
+    return {
+        "run": run.to_dict(),
+        "metrics": engine.get_global_metrics(),
+    }
+
+
+@app.get("/api/integrations/info")
+def get_integrations_info():
+    return {
+        "snippets": INTEGRATION_SNIPPETS,
+        "cache_stats": engine.cache.stats(),
     }
 
 

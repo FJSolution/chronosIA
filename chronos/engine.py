@@ -133,6 +133,7 @@ class ChronosEngine:
         estimated_cost_usd: float = 0.0125,
         estimated_latency_ms: int = 620,
         use_cache: bool = True,
+        halt_on_block: bool = True,
     ) -> ExecutionStep:
         step_index = len(run.steps) + 1
         step_id = f"step-{step_index}-{uuid.uuid4().hex[:6]}"
@@ -148,6 +149,14 @@ class ChronosEngine:
             )
             policy_dict = policy_res.to_dict()
             if not policy_res.allowed:
+                violations_list = [v.description for v in policy_res.violations]
+                self_heal_prompt = (
+                    f"[CHRONOS_FIREWALL_BLOCKED] Action={policy_res.action} | "
+                    f"SQLite Transaction={policy_res.shadow_diff.get('transaction_action', 'ROLLED_BACK')} | "
+                    f"Rows Mutated in SAVEPOINT={policy_res.shadow_diff.get('rows_mutated_in_savepoint', 0)} | "
+                    f"Violations: {'; '.join(violations_list)}. "
+                    f"Instruction: Rewrite the tool arguments to target only the single intended entity/row safely."
+                )
                 step = ExecutionStep(
                     step_index=step_index,
                     step_id=step_id,
@@ -158,7 +167,8 @@ class ChronosEngine:
                         "error": "ShadowFirewall Blocked Execution (Rolled Back at SQLite SAVEPOINT)",
                         "action": policy_res.action,
                         "transaction_action": policy_res.shadow_diff.get("transaction_action", "ROLLED_BACK"),
-                        "violations": [v.description for v in policy_res.violations],
+                        "violations": violations_list,
+                        "self_heal_observation": self_heal_prompt,
                     },
                     memory_snapshot=copy.deepcopy(memory_state),
                     status="BLOCKED_BY_FIREWALL",
@@ -171,15 +181,18 @@ class ChronosEngine:
                     policy_result=policy_dict,
                 )
                 run.steps.append(step)
-                run.status = "HALTED_BY_FIREWALL"
+                if halt_on_block:
+                    run.status = "HALTED_BY_FIREWALL"
                 self.storage.save_run(run.to_dict())
                 return step
 
-        # 2. Check Semantic Subgraph Cache
+        # 2. Check Hybrid Semantic Subgraph Cache
         if use_cache:
             cached = self.cache.lookup(step_type, name, input_payload)
             if cached:
                 output = copy.deepcopy(cached.output_payload)
+                output["_cache_match_mode"] = cached.match_mode
+                output["_cache_similarity"] = cached.similarity_score
                 memory_state.update(output.get("memory_updates", {}))
                 step = ExecutionStep(
                     step_index=step_index,

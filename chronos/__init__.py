@@ -10,6 +10,7 @@ from .sandbox_db import ShadowDatabaseSandbox
 from .storage import ChronosStorage
 from .llm_agent import LiveLLMAgent
 from .mcp_server import ChronosMCPServer, MCP_TOOLS
+from .integrations import ChronosToolInterceptor, INTEGRATION_SNIPPETS
 
 __all__ = [
     "ChronosEngine",
@@ -24,4 +25,7 @@ __all__ = [
     "LiveLLMAgent",
     "ChronosMCPServer",
     "MCP_TOOLS",
+    "ChronosToolInterceptor",
+    "INTEGRATION_SNIPPETS",
 ]
+

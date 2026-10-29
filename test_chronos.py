@@ -18,6 +18,7 @@ from chronos import (
     ShadowDatabaseSandbox,
     LiveLLMAgent,
     ChronosMCPServer,
+    ChronosToolInterceptor,
 )
 from chronos.scenarios import (
     run_finops_incident_scenario,
@@ -170,6 +171,16 @@ def test_6_fastapi_endpoints_end_to_end():
     assert live_res.status_code == 200
     assert live_res.json()["run"]["status"] == "HALTED_BY_FIREWALL"
 
+    # Self-Healing Agent endpoint
+    heal_res = client.post("/api/agent/self-heal", json={"scenario_type": "finops"})
+    assert heal_res.status_code == 200
+    assert heal_res.json()["run"]["status"] == "SELF_HEALED_SUCCESS"
+
+    # Integrations Info endpoint
+    sdk_info = client.get("/api/integrations/info")
+    assert sdk_info.status_code == 200
+    assert "langchain" in sdk_info.json()["snippets"]
+
     # MCP info & JSON-RPC endpoint
     mcp_info = client.get("/api/mcp/info")
     assert mcp_info.status_code == 200
@@ -190,3 +201,65 @@ def test_6_fastapi_endpoints_end_to_end():
     assert mcp_rpc.status_code == 200
     assert "total_orders" in mcp_rpc.json()["result"]["content"][0]["text"]
     client.post("/api/ledger/reset")
+
+
+def test_7_semantic_vector_cache_and_entity_guard():
+    cache = SubgraphCache(semantic_threshold=0.82)
+    cache.put(
+        "LLM_REASONING",
+        "synthesize_sql",
+        {"prompt": "Estornar o pedido ORD-9921 com valor 120"},
+        {"sql": "UPDATE orders SET status='REFUNDED' WHERE order_id='ORD-9921';"},
+        tokens=800,
+        cost_usd=0.012,
+        latency_ms=450,
+    )
+
+    # 1. Semantically equivalent phrasing with same entity ID (ORD-9921, 120) -> SEMANTIC_VECTOR HIT!
+    sem_hit = cache.lookup(
+        "LLM_REASONING",
+        "synthesize_sql",
+        {"prompt": "Reembolsar a ordem ORD-9921 com valor 120"},
+    )
+    assert sem_hit is not None
+    assert sem_hit.match_mode == "SEMANTIC_VECTOR"
+    assert sem_hit.similarity_score >= 0.82
+    assert cache.semantic_hits == 1
+
+    # 2. Different entity ID (ORD-1002 instead of ORD-9921) -> Strictly blocked by Entity Guard!
+    wrong_entity = cache.lookup(
+        "LLM_REASONING",
+        "synthesize_sql",
+        {"prompt": "Estornar o pedido ORD-1002 com valor 120"},
+    )
+    assert wrong_entity is None
+
+
+def test_8_self_healing_interceptor_and_langchain_wrapper(tmp_path):
+    engine = ChronosEngine(
+        db_path=str(tmp_path / "heal_traces.db"),
+        ledger_db_path=str(tmp_path / "heal_ledger.db"),
+    )
+    interceptor = ChronosToolInterceptor(engine, self_heal=True)
+
+    # 1. Run full FinOps Self-Healing Loop
+    healed_run = interceptor.run_self_healing_demo("finops")
+    assert healed_run.status == "SELF_HEALED_SUCCESS"
+    assert len(healed_run.steps) == 5
+    assert healed_run.steps[2].status == "BLOCKED_BY_FIREWALL"
+    assert "[CHRONOS_FIREWALL_BLOCKED]" in healed_run.steps[2].output_payload["self_heal_observation"]
+    assert healed_run.steps[4].status == "COMPLETED"
+    assert engine.sandbox_db.get_order("ORD-9921")["status"] == "REFUNDED"
+
+    # 2. Test LangChain duck-typed tool wrapping
+    class DummyLangChainTool:
+        name = "execute_sql"
+
+        def _run(self, query: str):
+            return {"executed": query}
+
+    run2 = engine.start_run("LangChain-Test", "Tool Wrapper Check")
+    wrapped = interceptor.wrap_langchain_tools([DummyLangChainTool()], run=run2)
+    blocked_out = wrapped[0]._run(query="DROP TABLE orders;")
+    assert "self_heal_observation" in blocked_out
+

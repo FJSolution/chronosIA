@@ -98,6 +98,12 @@ class ShadowDatabaseSandbox:
             "sample_rows": sample_rows,
         }
 
+    def get_order(self, order_id: str) -> Dict[str, Any]:
+        cur = self._conn.cursor()
+        cur.execute("SELECT * FROM orders WHERE order_id = ?;", (order_id,))
+        row = cur.fetchone()
+        return dict(row) if row else {}
+
     def simulate_and_validate_sql(
         self,
         query: str,

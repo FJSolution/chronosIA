@@ -48,8 +48,9 @@ class ChronosSDK:
         tokens: int = 750,
         cost_usd: float = 0.011,
         latency_ms: int = 480,
+        self_heal: bool = False,
     ):
-        """Decorator that intercepts an agent step/tool call with Chronos Firewall + Cache + Snapshot."""
+        """Decorator that intercepts an agent step/tool call with Chronos Firewall + Semantic Cache + Snapshot."""
 
         def decorator(fn: Callable):
             step_name = name or fn.__name__
@@ -75,9 +76,11 @@ class ChronosSDK:
                     estimated_tokens=tokens,
                     estimated_cost_usd=cost_usd,
                     estimated_latency_ms=latency_ms,
+                    halt_on_block=not self_heal,
                 )
                 return recorded.output_payload
 
             return wrapper
 
         return decorator
+

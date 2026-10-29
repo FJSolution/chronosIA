@@ -125,20 +125,25 @@
         <div>
           <div class="flex items-center gap-2">
             <span class="font-bold text-sm tracking-tight text-white">Chronos</span>
-            <span class="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">v0.3 Live LLM + MCP</span>
+            <span class="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">v0.4 Self-Heal + LangChain</span>
           </div>
-          <p class="text-[11px] text-slate-400 hidden sm:block">SAVEPOINT Shadow Sandbox, Live AI Agent & MCP Server</p>
+          <p class="text-[11px] text-slate-400 hidden sm:block">SAVEPOINT Shadow Sandbox, Self-Healing Interceptor, Semantic Vector Cache & MCP</p>
         </div>
       </div>
 
       <div class="hidden xl:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/[0.08] border border-emerald-500/20 text-[11px] text-emerald-300 font-medium">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 relative pulse-dot"></span>
-        <span>SQLite SAVEPOINT + MCP Ativos</span>
+        <span>SQLite SAVEPOINT + Self-Heal Ativos</span>
       </div>
     </div>
 
     <!-- Quick Action Buttons -->
     <div class="flex items-center gap-2">
+      <button onclick="openSdkModal()" class="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-xs font-semibold text-emerald-200 transition flex items-center gap-1.5">
+        <i data-lucide="code" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span>LangChain & OpenAI SDK</span>
+      </button>
+
       <button onclick="openMcpModal()" class="px-3 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/35 text-xs font-semibold text-purple-200 transition flex items-center gap-1.5">
         <i data-lucide="cpu" class="w-3.5 h-3.5 text-purple-400"></i>
         <span>Servidor MCP (Cursor / Claude)</span>
@@ -205,15 +210,15 @@
 
       <!-- 1-Click Prompt Presets -->
       <div class="flex items-center gap-1.5 shrink-0">
-        <span class="text-[11px] text-slate-400 mr-1">Exemplos:</span>
+        <button onclick="runSelfHealingLoop('finops')" id="btn-self-heal" class="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500/25 to-cyan-500/25 hover:from-emerald-500/35 hover:to-cyan-500/35 text-emerald-200 border border-emerald-400/40 text-[11px] font-bold transition flex items-center gap-1 shadow-md shadow-emerald-500/10" title="Veja o Agente errar o SQL, receber o feedback do SAVEPOINT e se autocorrigir sozinho!">
+          <i data-lucide="wand-sparkles" class="w-3.5 h-3.5 text-emerald-300"></i>
+          <span>Auto-Heal Loop (IA se Autocorrige)</span>
+        </button>
         <button onclick="fillAndRunPrompt('Reembolse todos os pedidos da tabela orders com $120')" class="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-medium transition">
-          💥 SQL sem WHERE (Perigoso)
+          💥 SQL sem WHERE
         </button>
         <button onclick="fillAndRunPrompt('Estorne apenas o pedido ORD-9921 com $120')" class="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium transition">
-          ✅ Apenas ORD-9921 (Seguro)
-        </button>
-        <button onclick="fillAndRunPrompt('Apague a tabela orders do banco')" class="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-medium transition">
-          🛑 DROP TABLE
+          ✅ Apenas ORD-9921
         </button>
       </div>
     </div>
@@ -489,6 +494,53 @@
     </div>
   </div>
 
+  <!-- LangChain / OpenAI SDK & Self-Healing Modal -->
+  <div id="sdk-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden items-center justify-center p-4">
+    <div class="glass-panel rounded-2xl max-w-3xl w-full p-6 space-y-4 border border-emerald-500/30 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/[0.07] pb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <i data-lucide="code" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Integrações SDK: LangChain, LangGraph, OpenAI & Self-Healing Loop</h3>
+            <p class="text-xs text-slate-400">Plugue o Firewall de SAVEPOINT + Cache Semântico Vetorial (128-dim) em qualquer framework</p>
+          </div>
+        </div>
+        <button onclick="closeSdkModal()" class="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] flex items-center justify-center text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <span class="text-xs font-semibold text-emerald-300">1. LangChain / LangGraph (1 linha)</span>
+          <pre id="sdk-langchain-box" class="mt-1.5 bg-[#050609] border border-white/10 rounded-xl p-3 text-[11px] text-emerald-300 mono overflow-x-auto max-h-48"></pre>
+        </div>
+        <div>
+          <span class="text-xs font-semibold text-cyan-300">2. OpenAI tool_calls Interceptor (Self-Heal)</span>
+          <pre id="sdk-openai-box" class="mt-1.5 bg-[#050609] border border-white/10 rounded-xl p-3 text-[11px] text-cyan-300 mono overflow-x-auto max-h-48"></pre>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-white/[0.07]">
+        <div class="text-xs text-slate-400">
+          Quer ver o loop de <strong class="text-emerald-300">Auto-Correção (Self-Healing)</strong> funcionando na prática agora?
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="closeSdkModal(); runSelfHealingLoop('finops')" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5">
+            <i data-lucide="wand-sparkles" class="w-3.5 h-3.5"></i>
+            <span>Rodar Self-Heal SQL (FinOps)</span>
+          </button>
+          <button onclick="closeSdkModal(); runSelfHealingLoop('sre')" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1.5">
+            <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+            <span>Rodar Self-Heal Bash (SRE)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     let allRuns = [];
     let selectedRunId = null;
@@ -532,6 +584,26 @@
       'fetch_customer_context': {
         title: 'Inspeção de Schema & Contexto SQLite',
         desc: 'Carregou o estado atual da tabela orders (250 pedidos reais) e contexto do pedido ORD-9921.'
+      },
+      'fetch_dispute_context': {
+        title: 'Leitura do Contexto do Ticket #9921',
+        desc: 'Carregou o pedido ORD-9921 ($120.00) na memória do agente antes da tomada de decisão.'
+      },
+      'plan_sql_attempt_1': {
+        title: 'Tentativa #1 da IA (SQL sem WHERE)',
+        desc: 'O agente gerou um UPDATE sem cláusula WHERE que afetaria todos os 250 pedidos.'
+      },
+      'self_healing_reflection': {
+        title: 'Auto-Correção da IA (Self-Healing Reflection)',
+        desc: 'A IA leu o erro do SAVEPOINT enviado pelo Firewall e reescreveu a query com WHERE order_id = ORD-9921.'
+      },
+      'plan_bash_attempt_1': {
+        title: 'Tentativa #1 da IA (rm -rf /var/log/*)',
+        desc: 'O agente tentou apagar logs recursivamente e alterar permissões de /etc/passwd.'
+      },
+      'self_healing_sre_reflection': {
+        title: 'Auto-Correção SRE (Self-Healing Reflection)',
+        desc: 'A IA recebeu o bloqueio da regra SYS-001 e trocou o comando por logrotate seguro.'
       },
       'diagnose_billing_anomaly': {
         title: 'Raciocínio da IA (Diagnóstico)',
@@ -600,6 +672,46 @@
     function fillAndRunPrompt(text) {
       document.getElementById('live-agent-prompt').value = text;
       runLiveAgentPrompt();
+    }
+
+    async function runSelfHealingLoop(scenarioType = 'finops') {
+      const btn = document.getElementById('btn-self-heal');
+      if (btn) btn.style.opacity = '0.6';
+      try {
+        const res = await fetch('/api/agent/self-heal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario_type: scenarioType })
+        });
+        const data = await res.json();
+        if (data.run) {
+          selectedStepIndex = data.run.steps.length;
+          await fetchOverview(data.run.run_id);
+          showToast(
+            'Auto-Correção (Self-Healing) Concluída!',
+            'O Agente errou no Passo #3 (SAVEPOINT Rollback), leu o feedback no Passo #4 e corrigiu o SQL sozinho no Passo #5!'
+          );
+        }
+      } finally {
+        if (btn) btn.style.opacity = '1';
+      }
+    }
+
+    async function openSdkModal() {
+      const modal = document.getElementById('sdk-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      const res = await fetch('/api/integrations/info');
+      const info = await res.json();
+      document.getElementById('sdk-langchain-box').textContent = info.snippets.langchain;
+      document.getElementById('sdk-openai-box').textContent = info.snippets.openai;
+      refreshLucide();
+    }
+
+    function closeSdkModal() {
+      const modal = document.getElementById('sdk-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
     }
 
     async function runLiveAgentPrompt() {
@@ -754,6 +866,11 @@
           <i data-lucide="shield-alert" class="w-3 h-3 text-rose-400"></i>Rollback no Firewall
         </span>`;
       }
+      if (status === 'SELF_HEALED_SUCCESS') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+          <i data-lucide="wand-sparkles" class="w-3 h-3 text-emerald-400"></i>Auto-Corrigido pela IA (Self-Healed)
+        </span>`;
+      }
       if (status === 'FORKED_SUCCESS') {
         return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/35">
           <i data-lucide="check-circle-2" class="w-3 h-3 text-emerald-400"></i>Corrigido & Commitado
@@ -807,7 +924,8 @@
         const cardClass = isSelected ? 'step-card step-selected' : 'step-card';
 
         let friendlyAgent = run.agent_name;
-        if (run.agent_name.includes('FinOps')) friendlyAgent = 'Agente Financeiro (FinOps)';
+        if (run.agent_name.includes('SelfHeal')) friendlyAgent = 'Agente Auto-Corretivo (Self-Heal)';
+        else if (run.agent_name.includes('FinOps')) friendlyAgent = 'Agente Financeiro (FinOps)';
         else if (run.agent_name.includes('K8s')) friendlyAgent = 'Agente Servidor Linux (SRE)';
         else if (run.agent_name.includes('Live-AI')) friendlyAgent = 'Agente IA ao Vivo';
 
@@ -870,9 +988,11 @@
     function formatPreviewLine(step) {
       if (step.input_payload.query) return step.input_payload.query;
       if (step.input_payload.cmd) return `$ ${step.input_payload.cmd}`;
+      if (step.output_payload.self_healed_query) return `✨ Corrigido: ${step.output_payload.self_healed_query}`;
+      if (step.output_payload.proposed_query) return step.output_payload.proposed_query;
       if (step.output_payload.generated_sql) return step.output_payload.generated_sql;
       if (step.output_payload.thought) return `"${step.output_payload.thought}"`;
-      if (step.input_payload.ticket_id) return `Ticket: ${step.input_payload.ticket_id} → Pedido ${step.output_payload.order_id} ($${step.output_payload.disputed_amount_usd})`;
+      if (step.input_payload.ticket_id) return `Ticket: ${step.input_payload.ticket_id} → Pedido ORD-9921 ($120.00)`;
       if (step.input_payload.charge_id) return `Stripe Charge: ${step.input_payload.charge_id} ($${step.output_payload.captured_usd || step.input_payload.amount_usd || 120})`;
       return JSON.stringify(step.input_payload);
     }
