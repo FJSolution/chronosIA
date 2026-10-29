@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chronos — Guardrail & Time-Travel para Agentes de IA</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #050609;
+      --bg-surface: #0b0d14;
+      --bg-elevated: #111520;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-base);
+      color: #f8fafc;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-feature-settings: "liga" 0;
+    }
+
+    .ambient-bg {
+      background:
+        radial-gradient(900px circle at 15% -10%, rgba(99, 102, 241, 0.12), transparent 55%),
+        radial-gradient(700px circle at 85% -5%, rgba(16, 185, 129, 0.08), transparent 55%),
+        #050609;
+    }
+
+    .glass-panel {
+      background: rgba(13, 16, 25, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .step-card {
+      background: linear-gradient(180deg, rgba(20, 24, 36, 0.75) 0%, rgba(12, 15, 23, 0.85) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04), 0 4px 14px rgba(0, 0, 0, 0.35);
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .step-card:hover {
+      border-color: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
+    }
+
+    .step-selected {
+      background: linear-gradient(180deg, rgba(49, 46, 129, 0.32) 0%, rgba(16, 19, 32, 0.95) 100%) !important;
+      border-color: rgba(129, 140, 248, 0.55) !important;
+      box-shadow: inset 0 1px 0 0 rgba(165, 180, 252, 0.25), 0 0 28px -6px rgba(99, 102, 241, 0.3) !important;
+    }
+
+    .step-blocked {
+      background: linear-gradient(180deg, rgba(76, 5, 25, 0.35) 0%, rgba(19, 11, 16, 0.92) 100%);
+      border-color: rgba(244, 63, 94, 0.45);
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.24);
+    }
+
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      70% { transform: scale(1.7); opacity: 0; }
+      100% { transform: scale(1.7); opacity: 0; }
+    }
+    .pulse-dot::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      background-color: currentColor;
+      animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+  </style>
+</head>
+<body class="h-screen flex flex-col ambient-bg select-none">
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 hidden items-center gap-3 px-4 py-3 rounded-xl bg-emerald-950/95 border border-emerald-500/40 text-emerald-200 shadow-2xl backdrop-blur-md transition-all">
+    <div class="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+      <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+    </div>
+    <div>
+      <div id="toast-title" class="text-xs font-bold text-white">Time-Travel Concluído!</div>
+      <div id="toast-desc" class="text-[11px] text-emerald-300/90">Passos anteriores reaproveitados em 1ms com 0 tokens gastos.</div>
+    </div>
+  </div>
+
+  <!-- Top Header -->
+  <header class="h-14 border-b border-white/[0.07] bg-[#07090f]/85 backdrop-blur-xl px-6 flex items-center justify-between shrink-0 z-30">
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-cyan-500 p-[1px] shadow-lg shadow-indigo-500/25">
+          <div class="w-full h-full bg-[#080a11] rounded-[11px] flex items-center justify-center">
+            <i data-lucide="history" class="w-4 h-4 text-indigo-400"></i>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-sm tracking-tight text-white">Chronos</span>
+            <span class="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">v0.2 SQLite Engine</span>
+          </div>
+          <p class="text-[11px] text-slate-400 hidden sm:block">SAVEPOINT Shadow Sandbox & Time-Travel para Agentes de IA</p>
+        </div>
+      </div>
+
+      <div class="hidden xl:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/[0.08] border border-emerald-500/20 text-[11px] text-emerald-300 font-medium">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 relative pulse-dot"></span>
+        <span>SQLite SAVEPOINT Ativo</span>
+      </div>
+    </div>
+
+    <!-- Quick Action Buttons -->
+    <div class="flex items-center gap-2">
+      <button onclick="toggleGuide()" id="btn-guide" class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-medium text-slate-300 transition flex items-center gap-1.5">
+        <i data-lucide="help-circle" class="w-3.5 h-3.5 text-indigo-400"></i>
+        <span>Como Funciona</span>
+      </button>
+
+      <button onclick="openLedgerModal()" class="px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-xs font-semibold text-cyan-200 transition flex items-center gap-1.5">
+        <i data-lucide="table-2" class="w-3.5 h-3.5 text-cyan-400"></i>
+        <span>Ver Banco SQLite Real</span>
+      </button>
+
+      <div class="h-4 w-[1px] bg-white/[0.08] mx-0.5"></div>
+
+      <button onclick="simulateRun('finops')" class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] text-xs font-medium text-slate-200 transition flex items-center gap-1.5">
+        <i data-lucide="database-zap" class="w-3.5 h-3.5 text-rose-400"></i>
+        <span>Novo Incidente SQL</span>
+      </button>
+
+      <button onclick="simulateRun('sre')" class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] text-xs font-medium text-slate-200 transition flex items-center gap-1.5">
+        <i data-lucide="terminal" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>Novo Incidente Linux</span>
+      </button>
+
+      <button onclick="toggleFirewallModal()" class="px-3.5 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-400/30 text-xs font-semibold text-indigo-200 transition flex items-center gap-1.5">
+        <i data-lucide="shield-check" class="w-3.5 h-3.5 text-indigo-400"></i>
+        <span>Testar Firewall</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Interactive 3-Step Onboarding Strip -->
+  <div id="onboarding-banner" class="bg-gradient-to-r from-indigo-950/50 via-[#0d111d] to-emerald-950/30 border-b border-indigo-500/20 px-6 py-3 shrink-0">
+    <div class="flex items-center justify-between gap-6">
+      <div class="flex items-center gap-6 flex-1">
+        <div class="flex items-center gap-2.5 shrink-0">
+          <div class="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white">Entenda em 15 segundos</div>
+            <div class="text-[11px] text-slate-400">Execução real em SQLite SAVEPOINT</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4 flex-1">
+          <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <span class="w-5 h-5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] font-bold flex items-center justify-center shrink-0">1</span>
+            <div class="text-[11px] leading-tight">
+              <span class="font-semibold text-white">Rollback Automático no Banco:</span>
+              <span class="text-slate-400"> A IA rodou um `UPDATE` sem `WHERE` que alterou 250 pedidos reais no SQLite, e o Chronos fez `ROLLBACK` instantâneo.</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <span class="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold flex items-center justify-center shrink-0">2</span>
+            <div class="text-[11px] leading-tight">
+              <span class="font-semibold text-white">Snapshots Persistidos em Disco:</span>
+              <span class="text-slate-400"> Os passos #1 a #4 estão salvos em `chronos_traces.db` (WAL) prontos para replay em 1ms.</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-emerald-500/[0.07] border border-emerald-500/20">
+            <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center justify-center shrink-0">3</span>
+            <div class="text-[11px] leading-tight">
+              <span class="font-semibold text-emerald-200">Conserte e Veja o Banco Mudar:</span>
+              <span class="text-slate-300"> Clique em <strong>"Resolver com 1 Clique"</strong> e depois abra <strong>"Ver Banco SQLite Real"</strong>!</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button onclick="toggleGuide()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/[0.05] transition" title="Fechar guia">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Clean 4-Card KPI Summary Bar -->
+  <section class="border-b border-white/[0.06] bg-[#080a10]/70 px-6 py-2.5 grid grid-cols-4 gap-4 shrink-0">
+    <div class="flex items-center justify-between px-4 py-2 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+      <div>
+        <div class="text-[11px] text-slate-400 font-medium">Rollbacks Automáticos (SQLite SAVEPOINT)</div>
+        <div class="flex items-baseline gap-2 mt-0.5">
+          <span id="kpi-firewall-blocked" class="text-lg font-bold text-rose-400 mono">0</span>
+          <span class="text-[11px] text-slate-500">de <span id="kpi-firewall-inspected" class="mono text-slate-300">0</span> transações</span>
+        </div>
+      </div>
+      <div class="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+        <i data-lucide="shield-alert" class="w-4 h-4"></i>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-4 py-2 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+      <div>
+        <div class="text-[11px] text-slate-400 font-medium">Tokens Economizados</div>
+        <div class="flex items-baseline gap-2 mt-0.5">
+          <span id="kpi-tokens-saved" class="text-lg font-bold text-emerald-400 mono">0</span>
+          <span id="kpi-savings-ratio" class="text-[11px] font-semibold text-emerald-400/80 mono">0% poupado</span>
+        </div>
+      </div>
+      <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+        <i data-lucide="trending-up" class="w-4 h-4"></i>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-4 py-2 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+      <div>
+        <div class="text-[11px] text-slate-400 font-medium">Viagens no Tempo (Replays)</div>
+        <div class="flex items-baseline gap-2 mt-0.5">
+          <span id="kpi-forks" class="text-lg font-bold text-indigo-300 mono">0</span>
+          <span class="text-[11px] text-slate-500">correções determinísticas</span>
+        </div>
+      </div>
+      <div class="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+        <i data-lucide="git-fork" class="w-4 h-4"></i>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-4 py-2 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+      <div>
+        <div class="text-[11px] text-slate-400 font-medium">Economia Financeira de API</div>
+        <div class="flex items-baseline gap-2 mt-0.5">
+          <span id="kpi-cost-saved" class="text-lg font-bold text-cyan-300 mono">$0.0000</span>
+          <span class="text-[11px] text-slate-500">Cache Hit: <span id="kpi-cache-rate" class="mono text-cyan-300">0%</span></span>
+        </div>
+      </div>
+      <div class="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+        <i data-lucide="zap" class="w-4 h-4"></i>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main 3-Column Workspace -->
+  <main class="flex-1 grid grid-cols-12 min-h-0">
+
+    <!-- Left Column: Agent Executions List (3 cols) -->
+    <aside class="col-span-3 border-r border-white/[0.06] bg-[#07090f] flex flex-col min-h-0">
+      <div class="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
+        <div>
+          <div class="flex items-center gap-2">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-400"></i>
+            <span class="text-xs font-bold text-white">1. Escolha uma Execução</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">Persistido em SQLite (`chronos_traces.db`)</p>
+        </div>
+        <span id="runs-count" class="text-[11px] mono px-2 py-0.5 rounded-full bg-white/[0.06] text-slate-300">0</span>
+      </div>
+
+      <div id="runs-list" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <!-- Populated by JS -->
+      </div>
+    </aside>
+
+    <!-- Center Column: Step-by-Step Timeline (5 cols) -->
+    <section class="col-span-5 border-r border-white/[0.06] bg-[#050609] flex flex-col min-h-0">
+      <div id="dag-header" class="px-6 py-3.5 border-b border-white/[0.06] bg-[#090c14] shrink-0">
+        <!-- Populated by JS -->
+      </div>
+
+      <div id="steps-timeline" class="flex-1 overflow-y-auto px-6 py-5">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- Right Column: Easy Action & Fix Studio (4 cols) -->
+    <aside class="col-span-4 bg-[#080a11] flex flex-col min-h-0">
+      <div class="px-5 pt-3.5 pb-0 border-b border-white/[0.06] bg-[#0a0d16] shrink-0">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="wand-sparkles" class="w-4 h-4 text-indigo-400"></i>
+            <h2 class="text-xs font-bold text-white">3. Diagnóstico & Time-Travel</h2>
+          </div>
+          <span id="inspector-step-badge" class="text-[11px] mono px-2.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+            Passo #1
+          </span>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-5 text-xs font-semibold border-b border-transparent -mb-[1px]">
+          <button onclick="setInspectorTab('timetravel')" id="tab-btn-timetravel" class="pb-2.5 border-b-2 border-indigo-400 text-white transition flex items-center gap-1.5">
+            <i data-lucide="git-branch" class="w-3.5 h-3.5"></i>
+            <span>Diagnóstico & Correção</span>
+          </button>
+          <button onclick="setInspectorTab('memory')" id="tab-btn-memory" class="pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5">
+            <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+            <span>Memória Salva</span>
+          </button>
+          <button onclick="setInspectorTab('raw')" id="tab-btn-raw" class="pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5">
+            <i data-lucide="code" class="w-3.5 h-3.5"></i>
+            <span>JSON Técnico</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="inspector-content" class="flex-1 overflow-y-auto p-5 space-y-4 select-text">
+        <!-- Populated by JS -->
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- Live SQLite Production Ledger Modal -->
+  <div id="ledger-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden items-center justify-center p-4">
+    <div class="glass-panel rounded-2xl max-w-4xl w-full p-6 space-y-4 border border-white/10 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/[0.07] pb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <i data-lucide="database" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Banco de Dados SQLite Real (`chronos_ledger.db`)</h3>
+            <p class="text-xs text-slate-400">Inspecione a tabela `orders` em tempo real antes e depois do Time-Travel</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="resetLedgerData()" class="px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-medium text-slate-300 flex items-center gap-1.5 transition">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            <span>Resetar Tabela (250 Pedidos)</span>
+          </button>
+          <button onclick="closeLedgerModal()" class="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] flex items-center justify-center text-slate-400 hover:text-white transition">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <div id="ledger-summary-cards" class="grid grid-cols-3 gap-3">
+        <!-- Populated dynamically -->
+      </div>
+
+      <div class="rounded-xl border border-white/[0.07] overflow-hidden bg-[#050609]">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="border-b border-white/[0.07] bg-white/[0.03] text-slate-400 font-semibold">
+              <th class="py-2.5 px-3">Order ID</th>
+              <th class="py-2.5 px-3">Cliente</th>
+              <th class="py-2.5 px-3">Tier</th>
+              <th class="py-2.5 px-3">Valor Original</th>
+              <th class="py-2.5 px-3">Valor Estornado</th>
+              <th class="py-2.5 px-3">Status no SQLite</th>
+            </tr>
+          </thead>
+          <tbody id="ledger-table-body" class="divide-y divide-white/[0.05] mono">
+            <!-- Populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ShadowFirewall Simulator Modal -->
+  <div id="firewall-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden items-center justify-center p-4">
+    <div class="glass-panel rounded-2xl max-w-2xl w-full p-6 space-y-5 border border-white/10 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/[0.07] pb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+            <i data-lucide="shield-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Simulador SQLite SAVEPOINT & Firewall</h3>
+            <p class="text-xs text-slate-400">Rode qualquer SQL real em um SAVEPOINT isolado e veja o `EXPLAIN QUERY PLAN` + Rollback</p>
+          </div>
+        </div>
+        <button onclick="toggleFirewallModal()" class="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] flex items-center justify-center text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-12 gap-3">
+        <div class="col-span-4">
+          <label class="block text-[11px] font-semibold text-slate-300 mb-1.5">Ferramenta</label>
+          <select id="fw-tool-name" class="w-full bg-[#050609] border border-white/10 rounded-lg px-3 py-2 text-xs text-white mono focus:outline-none focus:border-indigo-500">
+            <option value="execute_sql">execute_sql (SQLite)</option>
+            <option value="run_bash">run_bash (Terminal)</option>
+            <option value="issue_refund">issue_refund (Stripe)</option>
+          </select>
+        </div>
+        <div class="col-span-8">
+          <label class="block text-[11px] font-semibold text-slate-300 mb-1.5">Exemplos Prontos (Clique para preencher)</label>
+          <div class="flex flex-wrap gap-1.5">
+            <button onclick="setFwPreset('sql_drop')" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-medium transition">DROP TABLE orders</button>
+            <button onclick="setFwPreset('sql_safe')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium transition">SQL Seguro (Com WHERE)</button>
+            <button onclick="setFwPreset('wire_high')" class="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-medium transition">Transferência $25.000</button>
+            <button onclick="setFwPreset('bash_rm')" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-medium transition">rm -rf /var/log</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-[11px] font-semibold text-slate-300 mb-1.5">Comando enviado pelo Agente (JSON)</label>
+        <textarea id="fw-payload" rows="3" class="w-full bg-[#050609] border border-white/10 rounded-xl p-3 text-xs text-indigo-200 mono focus:outline-none focus:border-indigo-500">{"query": "DELETE FROM orders;"}</textarea>
+      </div>
+
+      <div class="flex justify-end">
+        <button onclick="runFirewallTest()" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-lg shadow-indigo-600/25 flex items-center gap-2">
+          <i data-lucide="play" class="w-3.5 h-3.5"></i>
+          <span>Executar no SAVEPOINT SQLite</span>
+        </button>
+      </div>
+
+      <div id="fw-result-box" class="bg-[#050609] border border-white/[0.07] rounded-xl p-4 text-xs mono overflow-x-auto max-h-56 text-slate-400">
+        Escolha um exemplo acima e clique em "Executar no SAVEPOINT SQLite".
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allRuns = [];
+    let selectedRunId = null;
+    let selectedStepIndex = null;
+    let currentTab = 'timetravel';
+
+    // Official Lucide SVG paths embedded locally so icons NEVER fail or disappear even offline
+    const LUCIDE_ICON_PATHS = {
+      'history': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+      'help-circle': '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+      'table-2': '<path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>',
+      'database-zap': '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 15 21.84"/><path d="M21 5V8"/><path d="M21 12L18 17H22L19 22"/><path d="M3 12A9 3 0 0 0 14.59 14.87"/>',
+      'terminal': '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+      'shield-check': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+      'sparkles': '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+      'x': '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+      'shield-alert': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+      'trending-up': '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+      'git-fork': '<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/>',
+      'zap': '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+      'layers': '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+      'wand-sparkles': '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>',
+      'git-branch': '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+      'cpu': '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
+      'code': '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+      'database': '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+      'rotate-ccw': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+      'play': '<polygon points="6 3 20 12 6 21 6 3"/>',
+      'check-circle-2': '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+      'fast-forward': '<polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/>',
+      'check': '<path d="M20 6 9 17l-5-5"/>',
+      'brain-circuit': '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M9 13a4.5 4.5 0 0 0 3-4"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M12 13h4"/><path d="M12 18h6a2 2 0 0 1 2 2v1"/><path d="M12 8h8"/><path d="M16 8V5a2 2 0 0 1 2-2"/><circle cx="16" cy="13" r=".5"/><circle cx="18" cy="3" r=".5"/><circle cx="20" cy="21" r=".5"/><circle cx="20" cy="8" r=".5"/>',
+      'bot': '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+      'download': '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+      'octagon-alert': '<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/>',
+      'x-circle': '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+      'chevron-down': '<path d="m6 9 6 6 6-6"/>'
+    };
+
+    const STEP_TRANSLATIONS = {
+      'fetch_customer_context': {
+        title: 'Leitura dos Dados do Cliente',
+        desc: 'Carregou o chamado #TKT-8841 do cliente VIP e identificou o pedido ORD-9921 ($120.00).'
+      },
+      'diagnose_billing_anomaly': {
+        title: 'Raciocínio da IA (Diagnóstico)',
+        desc: 'A IA analisou o histórico e concluiu que houve cobrança duplicada no cartão (ch_3Pq9921).'
+      },
+      'verify_stripe_charge': {
+        title: 'Consulta na API da Stripe',
+        desc: 'Confirmou que a cobrança de $120.00 está duplicada e elegível para reembolso.'
+      },
+      'synthesize_sql_remediation': {
+        title: 'IA Escreveu o Comando SQL',
+        desc: 'A IA gerou a query de atualização do banco (mas esqueceu de filtrar apenas o pedido ORD-9921!).'
+      },
+      'execute_sql': {
+        title: 'Execução no Banco SQLite Real (SAVEPOINT)',
+        desc: 'Executa a query dentro de um SAVEPOINT transacional antes de permitir o COMMIT.'
+      },
+      'issue_refund': {
+        title: 'Estorno Financeiro via Stripe',
+        desc: 'Devolução segura de $120.00 para o cartão do cliente após sincronizar o banco SQLite.'
+      },
+      'fetch_prometheus_metrics': {
+        title: 'Leitura de Métricas do Servidor',
+        desc: 'Detectou disco cheio (94.2%) na pasta /var/log/containers do cluster Kubernetes.'
+      },
+      'plan_disk_cleanup': {
+        title: 'Raciocínio da IA (Plano de Limpeza)',
+        desc: 'A IA decidiu apagar arquivos do sistema para liberar espaço rapidamente.'
+      },
+      'run_bash': {
+        title: 'Execução de Comando no Terminal Linux',
+        desc: 'Execução de script diretamente no servidor de produção.'
+      }
+    };
+
+    function refreshLucide() {
+      document.querySelectorAll('i[data-lucide]').forEach(el => {
+        const name = el.getAttribute('data-lucide');
+        const paths = LUCIDE_ICON_PATHS[name];
+        if (paths) {
+          const cls = el.getAttribute('class') || 'w-4 h-4';
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('viewBox', '0 0 24 24');
+          svg.setAttribute('fill', 'none');
+          svg.setAttribute('stroke', 'currentColor');
+          svg.setAttribute('stroke-width', '2');
+          svg.setAttribute('stroke-linecap', 'round');
+          svg.setAttribute('stroke-linejoin', 'round');
+          svg.setAttribute('class', `lucide lucide-${name} ${cls}`);
+          svg.innerHTML = paths;
+          el.replaceWith(svg);
+        }
+      });
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        try { window.lucide.createIcons(); } catch (e) {}
+      }
+    }
+
+    function toggleGuide() {
+      const banner = document.getElementById('onboarding-banner');
+      banner.classList.toggle('hidden');
+    }
+
+    function showToast(title, desc) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-title').textContent = title;
+      document.getElementById('toast-desc').textContent = desc;
+      toast.classList.remove('hidden');
+      toast.classList.add('flex');
+      refreshLucide();
+      setTimeout(() => {
+        toast.classList.add('hidden');
+        toast.classList.remove('flex');
+      }, 5000);
+    }
+
+    function setInspectorTab(tab) {
+      currentTab = tab;
+      ['timetravel', 'memory', 'raw'].forEach(t => {
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (t === tab) {
+          btn.className = 'pb-2.5 border-b-2 border-indigo-400 text-white transition flex items-center gap-1.5';
+        } else {
+          btn.className = 'pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5';
+        }
+      });
+      const activeRun = allRuns.find(r => r.run_id === selectedRunId);
+      if (activeRun) renderInspector(activeRun, selectedStepIndex);
+    }
+
+    async function fetchOverview(autoSelectRunId = null) {
+      const res = await fetch('/api/overview');
+      const data = await res.json();
+      renderMetrics(data.metrics);
+      allRuns = data.runs;
+      document.getElementById('runs-count').textContent = allRuns.length;
+
+      if (autoSelectRunId) {
+        selectedRunId = autoSelectRunId;
+      } else if (!selectedRunId && allRuns.length > 0) {
+        const finops = allRuns.find(r => r.agent_name.includes('FinOps'));
+        selectedRunId = finops ? finops.run_id : allRuns[0].run_id;
+      }
+
+      renderRunsList();
+      const activeRun = allRuns.find(r => r.run_id === selectedRunId) || allRuns[0];
+      if (activeRun) {
+        if (!selectedStepIndex || selectedStepIndex > activeRun.steps.length) {
+          selectedStepIndex = activeRun.steps.length;
+        }
+        renderDAG(activeRun);
+        renderInspector(activeRun, selectedStepIndex);
+      }
+      refreshLucide();
+    }
+
+    function renderMetrics(m) {
+      document.getElementById('kpi-tokens-saved').textContent = m.total_tokens_saved.toLocaleString();
+      document.getElementById('kpi-savings-ratio').textContent = `${m.savings_ratio_pct}% poupado`;
+      document.getElementById('kpi-firewall-blocked').textContent = m.firewall_blocked;
+      document.getElementById('kpi-firewall-inspected').textContent = m.firewall_inspected;
+      document.getElementById('kpi-forks').textContent = m.time_travel_forks;
+      document.getElementById('kpi-cache-rate').textContent = `${m.cache.hit_rate_pct}%`;
+      document.getElementById('kpi-cost-saved').textContent = `$${m.total_cost_saved_usd.toFixed(4)}`;
+    }
+
+    function statusPill(status) {
+      if (status === 'HALTED_BY_FIREWALL' || status === 'BLOCKED_BY_FIREWALL') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/35">
+          <i data-lucide="shield-alert" class="w-3 h-3 text-rose-400"></i>Rollback no Firewall
+        </span>`;
+      }
+      if (status === 'FORKED_SUCCESS') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/35">
+          <i data-lucide="check-circle-2" class="w-3 h-3 text-emerald-400"></i>Corrigido & Commitado
+        </span>`;
+      }
+      if (status === 'REPLAYED_SNAPSHOT') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+          <i data-lucide="fast-forward" class="w-3 h-3 text-cyan-400"></i>Memória Reaproveitada (0 Tokens)
+        </span>`;
+      }
+      if (status === 'CACHED_HIT') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+          <i data-lucide="zap" class="w-3 h-3 text-emerald-400"></i>Cache Instantâneo (0 Tokens)
+        </span>`;
+      }
+      return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-white/[0.06] text-slate-300 border border-white/[0.09]">
+        <i data-lucide="check" class="w-3 h-3 text-emerald-400"></i>Concluído
+      </span>`;
+    }
+
+    function stepTypeIcon(type, isBlocked, isReplayed) {
+      if (isBlocked) {
+        return `<div class="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0 shadow-md shadow-rose-500/15">
+          <i data-lucide="shield-alert" class="w-4 h-4"></i>
+        </div>`;
+      }
+      if (isReplayed) {
+        return `<div class="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-300 shrink-0">
+          <i data-lucide="fast-forward" class="w-4 h-4"></i>
+        </div>`;
+      }
+      if (type === 'LLM_REASONING') {
+        return `<div class="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0">
+          <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+        </div>`;
+      }
+      if (type === 'MEMORY_READ') {
+        return `<div class="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-300 shrink-0">
+          <i data-lucide="database" class="w-4 h-4"></i>
+        </div>`;
+      }
+      return `<div class="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300 shrink-0">
+        <i data-lucide="terminal" class="w-4 h-4"></i>
+      </div>`;
+    }
+
+    function renderRunsList() {
+      const container = document.getElementById('runs-list');
+      container.innerHTML = allRuns.map(run => {
+        const isSelected = run.run_id === selectedRunId;
+        const cardClass = isSelected ? 'step-card step-selected' : 'step-card';
+
+        const friendlyAgent = run.agent_name.includes('FinOps')
+          ? 'Agente Financeiro (FinOps)'
+          : 'Agente Servidor Linux (SRE)';
+
+        const forkBadge = run.parent_run_id
+          ? `<div class="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+               <i data-lucide="git-branch" class="w-3.5 h-3.5 shrink-0"></i>
+               <span class="truncate">Corrigido a partir do Passo #${run.forked_from_step}</span>
+             </div>`
+          : '';
+
+        return `
+          <div onclick="selectRun('${run.run_id}')" class="cursor-pointer rounded-xl p-3.5 ${cardClass}">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <i data-lucide="bot" class="w-4 h-4 text-indigo-400 shrink-0"></i>
+                <span class="text-xs font-bold text-white truncate">${friendlyAgent}</span>
+              </div>
+            </div>
+
+            <div class="mt-2">
+              ${statusPill(run.status)}
+            </div>
+
+            <div class="text-[11px] text-slate-400 mt-2 line-clamp-2 leading-relaxed">${run.scenario}</div>
+            ${forkBadge}
+
+            <div class="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] mono text-slate-400">
+              <span>${run.steps.length} passos</span>
+              ${run.total_tokens_saved > 0
+                ? `<span class="text-emerald-400 font-semibold">+${run.total_tokens_saved.toLocaleString()} tokens salvos</span>`
+                : `<span>${run.total_tokens_used.toLocaleString()} tokens</span>`
+              }
+            </div>
+          </div>
+        `;
+      }).join('');
+      refreshLucide();
+    }
+
+    function selectRun(runId) {
+      selectedRunId = runId;
+      const run = allRuns.find(r => r.run_id === runId);
+      if (run) {
+        selectedStepIndex = run.steps.length;
+        renderRunsList();
+        renderDAG(run);
+        renderInspector(run, selectedStepIndex);
+      }
+    }
+
+    function selectStep(stepIndex) {
+      selectedStepIndex = stepIndex;
+      const run = allRuns.find(r => r.run_id === selectedRunId);
+      if (run) {
+        renderDAG(run);
+        renderInspector(run, selectedStepIndex);
+      }
+    }
+
+    function formatPreviewLine(step) {
+      if (step.input_payload.query) return step.input_payload.query;
+      if (step.input_payload.cmd) return `$ ${step.input_payload.cmd}`;
+      if (step.output_payload.generated_sql) return step.output_payload.generated_sql;
+      if (step.output_payload.thought) return `"${step.output_payload.thought}"`;
+      if (step.input_payload.ticket_id) return `Ticket: ${step.input_payload.ticket_id} → Pedido ${step.output_payload.order_id} ($${step.output_payload.disputed_amount_usd})`;
+      if (step.input_payload.charge_id) return `Stripe Charge: ${step.input_payload.charge_id} ($${step.output_payload.captured_usd || step.input_payload.amount_usd || 120})`;
+      return JSON.stringify(step.input_payload);
+    }
+
+    function renderDAG(run) {
+      const header = document.getElementById('dag-header');
+      header.innerHTML = `
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-indigo-400 uppercase tracking-wider">2. Linha do Tempo do Agente</span>
+              <span class="text-slate-600">•</span>
+              <span class="text-xs mono text-slate-400">${run.run_id}</span>
+            </div>
+            <h1 class="text-sm font-bold text-white mt-0.5 truncate">${run.scenario}</h1>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <a href="/api/runs/${run.run_id}/export" download="${run.run_id}.chronos.json" class="px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-[11px] font-medium text-slate-300 flex items-center gap-1.5 transition" title="Baixar arquivo .chronos para replay local">
+              <i data-lucide="download" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <span>.chronos</span>
+            </a>
+            ${statusPill(run.status)}
+          </div>
+        </div>
+      `;
+
+      const timeline = document.getElementById('steps-timeline');
+
+      timeline.innerHTML = `
+        <div class="relative">
+          <!-- Connector spine -->
+          <div class="absolute left-[23px] top-5 bottom-5 w-[2px] bg-gradient-to-b from-indigo-500/40 via-slate-700/40 to-rose-500/40"></div>
+
+          <div class="space-y-3.5 relative">
+            ${run.steps.map(step => {
+              const isSelected = step.step_index === selectedStepIndex;
+              const isBlocked = step.status === 'BLOCKED_BY_FIREWALL';
+              const isReplayed = step.status === 'REPLAYED_SNAPSHOT';
+              const isCached = step.status === 'CACHED_HIT';
+
+              let cardClass = 'step-card';
+              if (isBlocked) cardClass += ' step-blocked';
+              if (isSelected) cardClass += ' step-selected';
+
+              const info = STEP_TRANSLATIONS[step.name] || {
+                title: step.name,
+                desc: 'Execução de etapa do agente autônomo.'
+              };
+
+              return `
+                <div onclick="selectStep(${step.step_index})" class="cursor-pointer rounded-2xl p-4 ${cardClass}">
+                  <div class="flex items-start gap-3.5">
+                    ${stepTypeIcon(step.step_type, isBlocked, isReplayed || isCached)}
+
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="px-2 py-0.5 rounded-md bg-white/[0.06] text-[11px] mono font-bold text-slate-200">Passo ${step.step_index}</span>
+                          <span class="text-xs font-bold text-white truncate">${info.title}</span>
+                        </div>
+                        ${statusPill(step.status)}
+                      </div>
+
+                      <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">${info.desc}</p>
+
+                      <!-- Code / Action Box -->
+                      <div class="mt-2.5 px-3 py-2 rounded-xl bg-[#050609]/95 border border-white/[0.06] text-[11px] mono ${isBlocked ? 'text-rose-300 border-rose-500/30' : 'text-indigo-200'} truncate">
+                        ${formatPreviewLine(step)}
+                      </div>
+
+                      ${isBlocked && step.policy_result ? `
+                        <div class="mt-3 p-3 rounded-xl bg-rose-950/40 border border-rose-500/35 flex items-center justify-between gap-3">
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <i data-lucide="octagon-alert" class="w-4 h-4 text-rose-400 shrink-0"></i>
+                            <div class="text-xs text-rose-200 truncate">
+                              <strong>SAVEPOINT Rollback:</strong> ${step.policy_result.violations[0]?.description || ''}
+                            </div>
+                          </div>
+                          <button onclick="event.stopPropagation(); quickFixStep('${run.run_id}', ${step.step_index}, '${step.name}')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shrink-0 flex items-center gap-1.5 shadow-lg shadow-emerald-600/30 transition">
+                            <i data-lucide="wand-sparkles" class="w-3.5 h-3.5"></i>
+                            <span>Resolver com 1 Clique</span>
+                          </button>
+                        </div>
+                      ` : ''}
+
+                      <div class="mt-2.5 flex items-center justify-between text-[11px] mono text-slate-400">
+                        <span class="text-slate-500">Função: ${step.name}()</span>
+                        <div class="flex items-center gap-2">
+                          ${step.tokens_saved > 0
+                            ? `<span class="text-emerald-400 font-semibold">0 tokens gastos (+${step.tokens_saved} poupados)</span>`
+                            : `<span>${step.tokens_used} tokens</span>`
+                          }
+                          <span class="text-slate-600">•</span>
+                          <span>${step.latency_ms}ms</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+      refreshLucide();
+    }
+
+    function renderInspector(run, stepIndex) {
+      const step = run.steps.find(s => s.step_index === stepIndex) || run.steps[run.steps.length - 1];
+      if (!step) return;
+
+      document.getElementById('inspector-step-badge').textContent = `Passo #${step.step_index}`;
+      const container = document.getElementById('inspector-content');
+
+      if (currentTab === 'memory') {
+        const entries = Object.entries(step.memory_snapshot || {});
+        container.innerHTML = `
+          <div class="glass-panel rounded-2xl p-4 space-y-3">
+            <div>
+              <span class="text-xs font-bold text-white flex items-center gap-2">
+                <i data-lucide="cpu" class="w-4 h-4 text-indigo-400"></i>
+                Memória Salva no Passo #${step.step_index}
+              </span>
+              <p class="text-[11px] text-slate-400 mt-1">Persistido em `chronos_traces.db` (SQLite WAL) para replay instantâneo.</p>
+            </div>
+            <div class="space-y-2 pt-1">
+              ${entries.map(([k, v]) => `
+                <div class="p-3 rounded-xl bg-[#050609] border border-white/[0.06] flex items-center justify-between gap-3">
+                  <span class="text-xs mono text-indigo-300 font-semibold">${k}</span>
+                  <span class="text-xs mono text-emerald-300 break-all text-right">${typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                </div>
+              `).join('') || '<div class="text-xs text-slate-500">Nenhum dado salvo ainda.</div>'}
+            </div>
+          </div>
+        `;
+        refreshLucide();
+        return;
+      }
+
+      if (currentTab === 'raw') {
+        container.innerHTML = `
+          <div class="space-y-4">
+            <div class="glass-panel rounded-2xl p-4">
+              <div class="text-xs font-bold text-slate-200 mb-2">Entrada Técnica (Input JSON)</div>
+              <pre class="text-xs mono text-slate-300 bg-[#050609] border border-white/[0.06] rounded-xl p-3 overflow-x-auto">${JSON.stringify(step.input_payload, null, 2)}</pre>
+            </div>
+            <div class="glass-panel rounded-2xl p-4">
+              <div class="text-xs font-bold text-slate-200 mb-2">Saída Técnica (Output JSON)</div>
+              <pre class="text-xs mono text-cyan-300 bg-[#050609] border border-white/[0.06] rounded-xl p-3 overflow-x-auto">${JSON.stringify(step.output_payload, null, 2)}</pre>
+            </div>
+          </div>
+        `;
+        refreshLucide();
+        return;
+      }
+
+      let defaultPatch = JSON.parse(JSON.stringify(step.input_payload));
+      let badCommandPreview = JSON.stringify(step.input_payload);
+      let goodCommandPreview = '';
+      let explanationText = 'Você pode ajustar os parâmetros deste passo e re-executar daqui para frente sem gastar tokens nos passos anteriores.';
+
+      if (step.name === 'execute_sql' || step.name === 'synthesize_sql_remediation') {
+        badCommandPreview = "UPDATE orders SET status = 'REFUNDED', refund_usd = 120.0;";
+        goodCommandPreview = "UPDATE orders SET status = 'REFUNDED', refund_usd = 120.0 WHERE order_id = 'ORD-9921';";
+        defaultPatch = {
+          query: goodCommandPreview,
+          database: "prod_ledger_primary",
+          amount_usd: 120.0
+        };
+        explanationText = 'No SAVEPOINT SQLite, a query sem WHERE alterou 250 pedidos reais ($30.000 de prejuízo) fazendo Full Table Scan. Veja a correção indexada:';
+      } else if (step.name === 'run_bash' || step.name === 'plan_disk_cleanup') {
+        badCommandPreview = "rm -rf /var/log/* && chmod 777 /etc/kubernetes";
+        goodCommandPreview = "logrotate -f /etc/logrotate.d/containers && journalctl --vacuum-size=500M";
+        defaultPatch = {
+          cmd: goodCommandPreview,
+          host: "ip-10-0-42-19.ec2.internal"
+        };
+        explanationText = 'A IA tentou apagar logs à força e abrir permissões críticas do servidor. Substituímos pelo comando seguro de rotação de logs:';
+      }
+
+      const priorTokens = run.steps
+        .filter(s => s.step_index < step.step_index)
+        .reduce((acc, s) => acc + s.tokens_used + s.tokens_saved, 0);
+
+      const sdiff = step.policy_result?.shadow_diff || {};
+
+      container.innerHTML = `
+        <div class="glass-panel rounded-2xl p-4 space-y-4 border border-indigo-500/30">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white flex items-center gap-2">
+              <i data-lucide="git-fork" class="w-4 h-4 text-indigo-400"></i>
+              Correção com Time-Travel (Passo #${step.step_index})
+            </span>
+            <span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+              Economiza ${priorTokens.toLocaleString()} tokens
+            </span>
+          </div>
+
+          <p class="text-xs text-slate-300 leading-relaxed">${explanationText}</p>
+
+          ${goodCommandPreview ? `
+            <div class="space-y-2.5">
+              <div class="p-3 rounded-xl bg-rose-950/30 border border-rose-500/30">
+                <div class="text-[11px] font-bold text-rose-300 flex items-center gap-1.5 mb-1">
+                  <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
+                  <span>O que a IA tentou fazer (Rolled Back):</span>
+                </div>
+                <div class="text-xs mono text-rose-200 break-all">${badCommandPreview}</div>
+              </div>
+
+              <div class="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30">
+                <div class="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 mb-1">
+                  <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+                  <span>Correção Segura Sugerida (Pronta):</span>
+                </div>
+                <div class="text-xs mono text-emerald-200 break-all">${goodCommandPreview}</div>
+              </div>
+            </div>
+          ` : ''}
+
+          <details class="group bg-[#050609] border border-white/[0.07] rounded-xl p-3">
+            <summary class="text-[11px] font-semibold text-slate-400 cursor-pointer flex items-center justify-between">
+              <span>Personalizar Payload JSON (Opcional)</span>
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+            </summary>
+            <textarea id="fork-patch-input" rows="4" class="mt-2.5 w-full bg-[#080a10] border border-white/10 rounded-lg p-2.5 text-xs text-emerald-300 mono focus:outline-none focus:border-indigo-500">${JSON.stringify(defaultPatch, null, 2)}</textarea>
+          </details>
+
+          <button onclick="triggerTimeTravelFork('${run.run_id}', ${step.step_index})" class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/25 transition flex items-center justify-center gap-2">
+            <i data-lucide="wand-sparkles" class="w-4 h-4"></i>
+            <span>Corrigir & Fazer Replay Instantâneo (Passo #${step.step_index})</span>
+          </button>
+        </div>
+
+        ${step.policy_result ? `
+          <div class="glass-panel rounded-2xl p-4 space-y-3 border ${step.policy_result.allowed ? 'border-emerald-500/30' : 'border-rose-500/30'}">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-white flex items-center gap-2">
+                <i data-lucide="database" class="w-4 h-4 ${step.policy_result.allowed ? 'text-emerald-400' : 'text-rose-400'}"></i>
+                Auditoria Real SQLite SAVEPOINT
+              </span>
+              <span class="text-[10px] mono font-bold px-2 py-0.5 rounded ${step.policy_result.allowed ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}">
+                ${sdiff.transaction_action || step.policy_result.action}
+              </span>
+            </div>
+
+            <div class="text-xs text-slate-300 bg-[#050609] p-3 rounded-xl border border-white/[0.05] space-y-1.5">
+              ${sdiff.query_plan ? `
+                <div><strong>EXPLAIN QUERY PLAN:</strong> <span class="mono text-amber-300">${sdiff.query_plan.join(', ')}</span></div>
+              ` : ''}
+              ${sdiff.estimated_rows_mutated !== undefined ? `
+                <div><strong>Linhas Afetadas no Banco Real:</strong> <span class="mono ${sdiff.estimated_rows_mutated > 1 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}">${sdiff.estimated_rows_mutated} de 250 pedidos</span></div>
+              ` : ''}
+              ${sdiff.financial_refund_delta_usd !== undefined ? `
+                <div><strong>Impacto Financeiro Medido:</strong> <span class="mono text-white font-semibold">$${Math.abs(sdiff.financial_refund_delta_usd).toLocaleString()}</span></div>
+              ` : ''}
+            </div>
+          </div>
+        ` : ''}
+      `;
+      refreshLucide();
+    }
+
+    async function openLedgerModal() {
+      const modal = document.getElementById('ledger-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      await loadLedgerTable();
+      refreshLucide();
+    }
+
+    function closeLedgerModal() {
+      const modal = document.getElementById('ledger-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    async function loadLedgerTable() {
+      const res = await fetch('/api/ledger');
+      const data = await res.json();
+
+      document.getElementById('ledger-summary-cards').innerHTML = `
+        <div class="p-3 rounded-xl bg-[#050609] border border-white/[0.06]">
+          <div class="text-[11px] text-slate-400">Total de Pedidos no SQLite</div>
+          <div class="text-base font-bold text-white mono mt-0.5">${data.total_orders} registros reais</div>
+        </div>
+        <div class="p-3 rounded-xl bg-[#050609] border border-white/[0.06]">
+          <div class="text-[11px] text-slate-400">Status Atual dos Pedidos</div>
+          <div class="text-xs font-semibold text-cyan-300 mono mt-1">${JSON.stringify(data.status_distribution)}</div>
+        </div>
+        <div class="p-3 rounded-xl bg-[#050609] border border-white/[0.06]">
+          <div class="text-[11px] text-slate-400">Total Estornado Confirmado</div>
+          <div class="text-base font-bold text-emerald-400 mono mt-0.5">$${data.total_refunds_usd.toFixed(2)}</div>
+        </div>
+      `;
+
+      document.getElementById('ledger-table-body').innerHTML = data.sample_rows.map(r => {
+        const isTarget = r.order_id === 'ORD-9921';
+        const statusColor = r.status === 'REFUNDED'
+          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+          : (r.status === 'DISPUTED' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-white/[0.06] text-slate-300 border-white/10');
+        return `
+          <tr class="${isTarget ? 'bg-indigo-950/30 font-semibold' : 'hover:bg-white/[0.02]'}">
+            <td class="py-2 px-3 text-white">${r.order_id} ${isTarget ? '<span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/30 text-indigo-200">Alvo do Ticket</span>' : ''}</td>
+            <td class="py-2 px-3 text-slate-300">${r.customer_name}</td>
+            <td class="py-2 px-3 text-slate-400">${r.tier}</td>
+            <td class="py-2 px-3 text-slate-200">$${r.amount_usd.toFixed(2)}</td>
+            <td class="py-2 px-3 ${r.refund_usd > 0 ? 'text-emerald-400 font-bold' : 'text-slate-500'}">$${r.refund_usd.toFixed(2)}</td>
+            <td class="py-2 px-3"><span class="px-2 py-0.5 rounded-full text-[10px] border ${statusColor}">${r.status}</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function resetLedgerData() {
+      await fetch('/api/ledger/reset', { method: 'POST' });
+      await loadLedgerTable();
+      showToast('Banco SQLite Resetado!', 'Os 250 pedidos voltaram ao estado original (ORD-9921 = DISPUTED).');
+    }
+
+    async function quickFixStep(runId, stepIndex, stepName) {
+      let patchedInput = {
+        query: "UPDATE orders SET status = 'REFUNDED', refund_usd = 120.0 WHERE order_id = 'ORD-9921';",
+        database: "prod_ledger_primary",
+        amount_usd: 120.0
+      };
+      if (stepName === 'run_bash') {
+        patchedInput = {
+          cmd: "logrotate -f /etc/logrotate.d/containers && journalctl --vacuum-size=500M",
+          host: "ip-10-0-42-19.ec2.internal"
+        };
+      }
+      await executeForkRequest(runId, stepIndex, patchedInput);
+    }
+
+    async function triggerTimeTravelFork(runId, stepIndex) {
+      const box = document.getElementById('fork-patch-input');
+      let patchedInput = {};
+      try {
+        patchedInput = JSON.parse(box.value);
+      } catch (err) {
+        alert('JSON inválido!');
+        return;
+      }
+      await executeForkRequest(runId, stepIndex, patchedInput);
+    }
+
+    async function executeForkRequest(runId, stepIndex, patchedInput) {
+      const res = await fetch(`/api/runs/${runId}/fork`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_step_index: stepIndex,
+          patched_input: patchedInput
+        })
+      });
+      const data = await res.json();
+      if (data.forked_run) {
+        selectedStepIndex = data.forked_run.steps.length;
+        await fetchOverview(data.forked_run.run_id);
+        showToast(
+          'Time-Travel Concluído & Commitado no SQLite!',
+          `Apenas o pedido ORD-9921 foi atualizado (+${data.forked_run.total_tokens_saved.toLocaleString()} tokens poupados).`
+        );
+      }
+    }
+
+    async function simulateRun(scenarioType) {
+      const res = await fetch('/api/runs/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenario_type: scenarioType })
+      });
+      const data = await res.json();
+      if (data.run) {
+        selectedStepIndex = data.run.steps.length;
+        await fetchOverview(data.run.run_id);
+        showToast(
+          'Novo Incidente Simulado!',
+          'O SAVEPOINT SQLite fez Rollback automático da query destrutiva.'
+        );
+      }
+    }
+
+    function toggleFirewallModal() {
+      const modal = document.getElementById('firewall-modal');
+      modal.classList.toggle('hidden');
+      modal.classList.toggle('flex');
+      refreshLucide();
+    }
+
+    function setFwPreset(type) {
+      const toolSelect = document.getElementById('fw-tool-name');
+      const payloadBox = document.getElementById('fw-payload');
+      if (type === 'sql_drop') {
+        toolSelect.value = 'execute_sql';
+        payloadBox.value = JSON.stringify({ query: "DROP TABLE orders;" }, null, 2);
+      } else if (type === 'sql_safe') {
+        toolSelect.value = 'execute_sql';
+        payloadBox.value = JSON.stringify({ query: "UPDATE orders SET status = 'REFUNDED', refund_usd = 120.0 WHERE order_id = 'ORD-9921';" }, null, 2);
+      } else if (type === 'wire_high') {
+        toolSelect.value = 'issue_refund';
+        payloadBox.value = JSON.stringify({ charge_id: "ch_9921", amount_usd: 25000.0 }, null, 2);
+      } else if (type === 'bash_rm') {
+        toolSelect.value = 'run_bash';
+        payloadBox.value = JSON.stringify({ cmd: "rm -rf /var/log/* && chmod 777 /etc/kubernetes" }, null, 2);
+      }
+    }
+
+    async function runFirewallTest() {
+      const toolName = document.getElementById('fw-tool-name').value;
+      const args = JSON.parse(document.getElementById('fw-payload').value);
+      const res = await fetch('/api/firewall/inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_name: toolName, args })
+      });
+      const data = await res.json();
+      document.getElementById('fw-result-box').innerHTML = `<pre class="${data.result.allowed ? 'text-emerald-400' : 'text-rose-400'}">${JSON.stringify(data.result, null, 2)}</pre>`;
+      renderMetrics(data.metrics);
+    }
+
+    refreshLucide();
+    fetchOverview();
+  </script>
+</body>
+</html>
