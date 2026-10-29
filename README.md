@@ -1,6 +1,6 @@
 #  ChronosAI — Deterministic Time-Travel Debugger, Shadow Firewall & Subgraph Cache for AI Agents
 
-# ⏱️ ChronosAI
+#  ChronosAI
 ### Deterministic Time-Travel Debugger, Shadow Firewall & Subgraph Cache for Autonomous AI Agents
 
 ##  Visão Geral (Por que este projeto vale milhões)
@@ -24,9 +24,9 @@ As enterprises transition from simple chatbots to **Autonomous Agents** capable 
 3. **Redundant Inference Spend:** Up to 80% of agent workflows repeat identical data-fetching and reasoning subgraphs.
 
 **ChronosAI** solves all three in a lightweight, drop-in runtime:
-- **🛡️ Transactional Shadow Firewall (`chronos/sandbox_db.py` & `chronos/firewall.py`):** Executes candidate SQL queries inside an isolated **`SAVEPOINT`**, inspects `EXPLAIN QUERY PLAN` for full-table scans, measures exact row mutations and financial impact, and executes an automatic **`ROLLBACK TO SAVEPOINT`** before production data is harmed.
-- **⏪ Deterministic Time-Travel Fork (`chronos/engine.py`):** Clones Steps `1 .. N-1` from immutable WAL snapshots in **1ms at $0.00 (0 tokens)**, allowing engineers to patch Step `N` and resume execution deterministically.
-- **⚡ Semantic Subgraph Cache (`chronos/cache.py`):** Content-addressable (`SHA-256`) intent normalization that serves validated agent sub-routines in `2ms`.
+- ** Transactional Shadow Firewall (`chronos/sandbox_db.py` & `chronos/firewall.py`):** Executes candidate SQL queries inside an isolated **`SAVEPOINT`**, inspects `EXPLAIN QUERY PLAN` for full-table scans, measures exact row mutations and financial impact, and executes an automatic **`ROLLBACK TO SAVEPOINT`** before production data is harmed.
+- ** Deterministic Time-Travel Fork (`chronos/engine.py`):** Clones Steps `1 .. N-1` from immutable WAL snapshots in **1ms at $0.00 (0 tokens)**, allowing engineers to patch Step `N` and resume execution deterministically.
+- ** Semantic Subgraph Cache (`chronos/cache.py`):** Content-addressable (`SHA-256`) intent normalization that serves validated agent sub-routines in `2ms`.
 
 ### Architecture
 
@@ -73,7 +73,7 @@ with sdk.trace_run(agent_name="FinOps-Agent", scenario="Order Refund #9921") as 
 
 ---
 
-## 📂 Estrutura do Projeto
+##  Estrutura do Projeto
 
 | Arquivo | Descrição |
 | :--- | :--- |
