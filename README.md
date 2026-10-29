@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⏱️ ChronosAI
+#  ChronosAI
 ### Deterministic Time-Travel Debugger, Shadow Firewall & Subgraph Cache for Autonomous AI Agents
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-indigo.svg)](LICENSE)
