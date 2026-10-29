@@ -1,16 +1,17 @@
 """
-ChronosAI — FastAPI Control Plane & Time-Travel Studio Backend.
-Backed by Real SQLite SAVEPOINT Shadow Sandbox (`chronos_ledger.db`) and Persistent Trace Store (`chronos_traces.db`).
+ChronosAI — FastAPI Control Plane, Live LLM Agent Runner & Model Context Protocol (MCP) Server.
 """
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from chronos.engine import ChronosEngine
+from chronos.llm_agent import LiveLLMAgent
+from chronos.mcp_server import ChronosMCPServer, MCP_TOOLS
 from chronos.scenarios import (
     run_finops_incident_scenario,
     continue_forked_finops_run,
@@ -18,14 +19,15 @@ from chronos.scenarios import (
 )
 
 app = FastAPI(
-    title="ChronosAI Control Plane",
-    description="Deterministic Time-Travel Debugger, SQLite SAVEPOINT Shadow Firewall & Subgraph Cache",
-    version="0.2.0",
+    title="ChronosAI Control Plane & MCP Server",
+    description="Deterministic Time-Travel Debugger, SQLite SAVEPOINT Shadow Firewall, Live LLM Runner & MCP Server",
+    version="0.3.0",
 )
 
 engine = ChronosEngine()
-# Reset seed ledger on startup so ORD-9921 starts in DISPUTED state for clean demos
 engine.sandbox_db.reset_seed_data()
+live_agent = LiveLLMAgent(engine)
+mcp_server = ChronosMCPServer(engine)
 
 # Seed initial production traces
 _initial_finops = run_finops_incident_scenario(engine, use_cache=True)
@@ -51,7 +53,13 @@ class FirewallInspectRequest(BaseModel):
 
 
 class SimulateScenarioRequest(BaseModel):
-    scenario_type: str = "finops"  # "finops" or "sre"
+    scenario_type: str = "finops"
+
+
+class LivePromptRequest(BaseModel):
+    prompt: str
+    provider: str = "auto"  # "auto", "gemini", "openai", "ollama"
+    api_key: Optional[str] = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -72,6 +80,46 @@ def get_overview():
     return {
         "metrics": engine.get_global_metrics(),
         "runs": runs_sorted,
+    }
+
+
+@app.post("/api/agent/run")
+def run_live_agent_prompt(req: LivePromptRequest):
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+    run = live_agent.run_prompt(
+        user_prompt=req.prompt.strip(),
+        provider=req.provider,
+        api_key=req.api_key,
+    )
+    return {
+        "run": run.to_dict(),
+        "metrics": engine.get_global_metrics(),
+    }
+
+
+@app.post("/mcp")
+def handle_mcp_jsonrpc(payload: Dict[str, Any]):
+    resp = mcp_server.handle_jsonrpc(payload)
+    return resp or {"jsonrpc": "2.0", "status": "ok"}
+
+
+@app.get("/api/mcp/info")
+def get_mcp_info():
+    repo_dir = str(Path(__file__).parent.resolve()).replace("\\", "/")
+    return {
+        "protocol_version": "2024-11-05",
+        "server_name": "chronos-mcp-firewall",
+        "tools": MCP_TOOLS,
+        "mcp_config_snippet": {
+            "mcpServers": {
+                "chronos-firewall": {
+                    "command": "python",
+                    "args": ["-m", "chronos.mcp_server"],
+                    "cwd": repo_dir,
+                }
+            }
+        },
     }
 
 
@@ -129,7 +177,7 @@ def fork_run(run_id: str, req: ForkRequest):
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
     def _continuation(eng: ChronosEngine, forked_run, patched_inp: Dict[str, Any], mem: Dict[str, Any]):
-        if "K8s-SecOps" in source_run.agent_name:
+        if "K8s-SecOps" in source_run.agent_name or "cmd" in patched_inp:
             cmd = patched_inp.get(
                 "cmd",
                 "logrotate -f /etc/logrotate.d/containers && journalctl --vacuum-size=500M",
