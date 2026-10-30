@@ -1,9 +1,11 @@
 """
 ChronosStorage — Persistent SQLite WAL Snapshot Store & Portable `.chronos` Trace Exporter.
-Ensures agent DAG runs and memory snapshots survive server restarts and can be shared across machines.
+Persists sequential runs and memory for recovery and JSON export.
 """
 
 import json
+from threading import RLock
+from .locking import synchronized
 import sqlite3
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -16,6 +18,7 @@ class ChronosStorage:
     """
 
     def __init__(self, db_path: Optional[str] = None):
+        self._lock = RLock()
         self.db_path = db_path or str(Path(__file__).parent.parent / "chronos_traces.db")
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -40,6 +43,7 @@ class ChronosStorage:
         )
         self._conn.commit()
 
+    @synchronized
     def save_run(self, run_dict: Dict[str, Any]) -> None:
         cur = self._conn.cursor()
         cur.execute(
@@ -63,6 +67,7 @@ class ChronosStorage:
         )
         self._conn.commit()
 
+    @synchronized
     def load_all_runs(self) -> List[Dict[str, Any]]:
         cur = self._conn.cursor()
         cur.execute("SELECT run_json FROM agent_runs ORDER BY created_at DESC;")
@@ -74,10 +79,11 @@ class ChronosStorage:
         """
         return {
             "chronos_format_version": "1.0",
-            "engine": "ChronosAI Deterministic Runtime",
+            "engine": "ChronosAI Trace Runtime",
             "exported_run": run_dict,
             "replay_instructions": {
-                "cli": f"chronos replay {run_dict['run_id']}.chronos.json --from-step 5",
-                "deterministic_guarantees": "All steps carry SHA-256 content-addressable state hashes and immutable memory snapshots.",
+                "api": "ChronosEngine.fork_from_step requires an explicit continuation callback",
+                "scope": "Recorded steps and memory only; external state is not restored",
+                "integrity": "Mutable local trace store; not an immutable or signed audit log",
             },
         }

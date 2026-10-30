@@ -2,12 +2,15 @@
 ChronosAI — FastAPI Control Plane, Live LLM Agent Runner & Model Context Protocol (MCP) Server.
 """
 
+import os
+import secrets
 from pathlib import Path
 from typing import Dict, Any, Optional
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
 
 from chronos.engine import ChronosEngine
 from chronos.llm_agent import LiveLLMAgent
@@ -21,19 +24,58 @@ from chronos.scenarios import (
 
 app = FastAPI(
     title="ChronosAI Control Plane & MCP Server",
-    description="Deterministic Time-Travel Debugger, SQLite SAVEPOINT Shadow Firewall, Semantic Vector Cache, Self-Healing Interceptor & MCP Server",
-    version="0.4.0",
+    description="Local ledger policies, execution traces and explicit demonstration scenarios",
+    version="0.5.0",
 )
 
-engine = ChronosEngine()
-engine.sandbox_db.reset_seed_data()
+engine = ChronosEngine.from_environment()
 live_agent = LiveLLMAgent(engine)
 mcp_server = ChronosMCPServer(engine)
-interceptor = ChronosToolInterceptor(engine, self_heal=True)
+interceptor = ChronosToolInterceptor(engine, self_heal=True, local_sql=True)
 
-# Seed initial production traces
-_initial_finops = run_finops_incident_scenario(engine, use_cache=True)
-_initial_sre = run_sre_secops_scenario(engine)
+
+@app.middleware("http")
+async def authenticate(request: Request, call_next):
+    if request.url.path.startswith(("/api/", "/mcp", "/docs", "/redoc", "/openapi")):
+        expected = os.environ.get("CHRONOS_API_TOKEN", "")
+        if len(expected) < 32:
+            return JSONResponse({"detail": "Configure CHRONOS_API_TOKEN with at least 32 characters"}, status_code=503)
+        scheme, _, supplied = request.headers.get("authorization", "").partition(" ")
+        admin = scheme.lower() == "bearer" and secrets.compare_digest(supplied.encode(), expected.encode())
+        reader_token = os.environ.get("CHRONOS_READ_TOKEN", "")
+        reader = scheme.lower() == "bearer" and len(reader_token) >= 32 and secrets.compare_digest(supplied.encode(), reader_token.encode())
+        if not admin and not reader:
+            return JSONResponse({"detail": "Authentication required"}, status_code=401, headers={"WWW-Authenticate": "Bearer"})
+        if not admin and request.method not in ("GET", "HEAD"):
+            return JSONResponse({"detail": "Read-only token cannot mutate state"}, status_code=403)
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    )
+    return response
+
+
+@app.exception_handler(ValueError)
+async def invalid_operation(request, exc):
+    return JSONResponse({"detail": str(exc)}, status_code=400)
+
+
+@app.exception_handler(PermissionError)
+async def forbidden_operation(request, exc):
+    return JSONResponse({"detail": str(exc)}, status_code=403)
+
+
+def require_demo():
+    if not engine.demo_mode:
+        raise HTTPException(status_code=403, detail="This action requires explicit demo mode")
+
 
 STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
@@ -41,10 +83,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class ForkRequest(BaseModel):
-    target_step_index: int = 5
+    target_step_index: int = Field(default=5, ge=1)
     patched_input: Dict[str, Any] = {
         "query": "UPDATE orders SET status = 'REFUNDED', refund_usd = 120.0 WHERE order_id = 'ORD-9921';",
-        "database": "prod_ledger_primary",
+        "database": "ledger",
         "amount_usd": 120.0,
     }
 
@@ -55,12 +97,12 @@ class FirewallInspectRequest(BaseModel):
 
 
 class SimulateScenarioRequest(BaseModel):
-    scenario_type: str = "finops"
+    scenario_type: Literal["finops", "sre"] = "finops"
 
 
 class LivePromptRequest(BaseModel):
-    prompt: str
-    provider: str = "auto"  # "auto", "gemini", "openai", "ollama"
+    prompt: str = Field(min_length=1, max_length=10000)
+    provider: Literal["auto", "builtin", "gemini", "openai", "ollama"] = "auto"  # "auto", "gemini", "openai", "ollama"
     api_key: Optional[str] = None
 
 
@@ -75,7 +117,7 @@ def serve_studio():
 @app.get("/api/overview")
 def get_overview():
     runs_sorted = sorted(
-        [r.to_dict() for r in engine.runs.values()],
+        [r.to_dict() for r in list(engine.runs.values())],
         key=lambda x: x["created_at"],
         reverse=True,
     )
@@ -102,6 +144,7 @@ def run_live_agent_prompt(req: LivePromptRequest):
 
 @app.post("/api/agent/self-heal")
 def run_self_healing_agent(req: SimulateScenarioRequest):
+    require_demo()
     run = interceptor.run_self_healing_demo(scenario_type=req.scenario_type)
     return {
         "run": run.to_dict(),
@@ -120,7 +163,7 @@ def get_integrations_info():
 @app.post("/mcp")
 def handle_mcp_jsonrpc(payload: Dict[str, Any]):
     resp = mcp_server.handle_jsonrpc(payload)
-    return resp or {"jsonrpc": "2.0", "status": "ok"}
+    return resp if resp is not None else Response(status_code=204)
 
 
 @app.get("/api/mcp/info")
@@ -149,6 +192,8 @@ def get_ledger():
 
 @app.post("/api/ledger/reset")
 def reset_ledger():
+    require_demo()
+    engine.cache.clear()
     engine.sandbox_db.reset_seed_data()
     return {
         "status": "RESET_COMPLETE",
@@ -178,10 +223,10 @@ def export_run_bundle(run_id: str):
 
 @app.post("/api/runs/simulate")
 def simulate_run(req: SimulateScenarioRequest):
+    require_demo()
     if req.scenario_type == "sre":
         run = run_sre_secops_scenario(engine)
     else:
-        engine.sandbox_db.reset_seed_data()
         run = run_finops_incident_scenario(engine, use_cache=True)
     return {
         "run": run.to_dict(),
@@ -191,7 +236,10 @@ def simulate_run(req: SimulateScenarioRequest):
 
 @app.post("/api/runs/{run_id}/fork")
 def fork_run(run_id: str, req: ForkRequest):
+    require_demo()
     source_run = engine.runs.get(run_id)
+    if source_run and source_run.execution_mode != "DEMO":
+        raise HTTPException(status_code=400, detail="Generic runs require an explicit SDK continuation")
     if not source_run:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
@@ -210,7 +258,8 @@ def fork_run(run_id: str, req: ForkRequest):
                     "exit_code": 0,
                     "freed_gb": 54.8,
                     "new_disk_usage_pct": 38.4,
-                    "status": "REMEDIATED_SAFELY",
+                    "status": "SIMULATED",
+                    "executed": False,
                 },
                 memory_state=mem,
                 estimated_tokens=290,

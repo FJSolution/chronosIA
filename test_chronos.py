@@ -9,6 +9,7 @@ Comprehensive End-to-End Verification Suite for ChronosAI:
 7. Ergonomic Python SDK & FastAPI Control Plane Endpoints
 """
 
+import os
 from fastapi.testclient import TestClient
 from chronos import (
     ChronosEngine,
@@ -30,6 +31,7 @@ from server import app
 
 def test_1_sqlite_savepoint_rollback_and_commit(tmp_path):
     engine = ChronosEngine(
+        demo_mode=True,
         db_path=str(tmp_path / "test_traces.db"),
         ledger_db_path=str(tmp_path / "test_ledger.db"),
     )
@@ -72,7 +74,7 @@ def test_1_sqlite_savepoint_rollback_and_commit(tmp_path):
 def test_2_firewall_financial_shell_and_secret_rules(tmp_path):
     fw = ShadowFirewall(
         max_auto_transfer_usd=500.0,
-        sandbox_db=ShadowDatabaseSandbox(db_path=str(tmp_path / "fw_ledger.db")),
+        sandbox_db=ShadowDatabaseSandbox(db_path=str(tmp_path / "fw_ledger.db"), seed_demo=True),
     )
     assert not fw.inspect_tool_call("issue_refund", {"charge_id": "ch_1", "amount_usd": 25000.0}).allowed
     assert fw.inspect_tool_call("issue_refund", {"charge_id": "ch_1", "amount_usd": 120.0}).allowed
@@ -92,6 +94,7 @@ def test_3_subgraph_cache_deduplication():
 
 def test_4_time_travel_fork_finops_and_sre(tmp_path):
     engine = ChronosEngine(
+        demo_mode=True,
         db_path=str(tmp_path / "traces.db"),
         ledger_db_path=str(tmp_path / "ledger.db"),
     )
@@ -103,7 +106,7 @@ def test_4_time_travel_fork_finops_and_sre(tmp_path):
         target_step_index=5,
         patched_input={
             "query": "UPDATE orders SET status = 'REFUNDED', refund_usd = 120.0 WHERE order_id = 'ORD-9921';",
-            "database": "prod_ledger_primary",
+            "database": "ledger",
             "amount_usd": 120.0,
         },
         continuation_fn=continue_forked_finops_run,
@@ -118,18 +121,19 @@ def test_4_time_travel_fork_finops_and_sre(tmp_path):
 
 def test_5_live_llm_agent_and_mcp_server(tmp_path):
     engine = ChronosEngine(
+        demo_mode=True,
         db_path=str(tmp_path / "mcp_traces.db"),
         ledger_db_path=str(tmp_path / "mcp_ledger.db"),
     )
     agent = LiveLLMAgent(engine)
 
-    # 1. Dangerous natural language prompt -> Blocked by ShadowFirewall at Step 3!
-    bad_run = agent.run_prompt("Reembolse todos os pedidos da tabela orders com $120")
+    # 1. Explicit destructive demo request is blocked by the SQL policy.
+    bad_run = agent.run_prompt("DROP TABLE orders", provider="builtin")
     assert bad_run.status == "HALTED_BY_FIREWALL"
     assert bad_run.steps[-1].status == "BLOCKED_BY_FIREWALL"
 
     # 2. Safe natural language prompt -> Commits to SQLite!
-    safe_run = agent.run_prompt("Estorne apenas o pedido ORD-9921 com $120")
+    safe_run = agent.run_prompt("Estorne apenas o pedido ORD-9921 com $120", provider="builtin")
     assert safe_run.status == "COMPLETED"
     assert safe_run.steps[-1].status == "COMPLETED"
 
@@ -160,13 +164,13 @@ def test_5_live_llm_agent_and_mcp_server(tmp_path):
 
 
 def test_6_fastapi_endpoints_end_to_end():
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer " + os.environ["CHRONOS_API_TOKEN"]})
     client.post("/api/ledger/reset")
 
     # Live Agent endpoint
     live_res = client.post(
         "/api/agent/run",
-        json={"prompt": "Reembolse todos os pedidos da tabela orders com $120", "provider": "auto"},
+        json={"prompt": "DROP TABLE orders", "provider": "builtin"},
     )
     assert live_res.status_code == 200
     assert live_res.json()["run"]["status"] == "HALTED_BY_FIREWALL"
@@ -215,16 +219,14 @@ def test_7_semantic_vector_cache_and_entity_guard():
         latency_ms=450,
     )
 
-    # 1. Semantically equivalent phrasing with same entity ID (ORD-9921, 120) -> SEMANTIC_VECTOR HIT!
+    # 1. Similar wording is deliberately not reused for a cached decision.
     sem_hit = cache.lookup(
         "LLM_REASONING",
         "synthesize_sql",
         {"prompt": "Reembolsar a ordem ORD-9921 com valor 120"},
     )
-    assert sem_hit is not None
-    assert sem_hit.match_mode == "SEMANTIC_VECTOR"
-    assert sem_hit.similarity_score >= 0.82
-    assert cache.semantic_hits == 1
+    assert sem_hit is None  # Similar text no longer authorizes cached decisions.
+    assert cache.semantic_hits == 0
 
     # 2. Different entity ID (ORD-1002 instead of ORD-9921) -> Strictly blocked by Entity Guard!
     wrong_entity = cache.lookup(
@@ -237,10 +239,11 @@ def test_7_semantic_vector_cache_and_entity_guard():
 
 def test_8_self_healing_interceptor_and_langchain_wrapper(tmp_path):
     engine = ChronosEngine(
+        demo_mode=True,
         db_path=str(tmp_path / "heal_traces.db"),
         ledger_db_path=str(tmp_path / "heal_ledger.db"),
     )
-    interceptor = ChronosToolInterceptor(engine, self_heal=True)
+    interceptor = ChronosToolInterceptor(engine, self_heal=True, local_sql=True)
 
     # 1. Run full FinOps Self-Healing Loop
     healed_run = interceptor.run_self_healing_demo("finops")

@@ -7,19 +7,21 @@ import json
 from functools import wraps
 from typing import Dict, Any, List, Callable, Optional, Union
 
+from .arguments import bind_tool_call
 from .engine import ChronosEngine, AgentRun
 
 
 class ChronosToolInterceptor:
     """
-    Universal Middleware & Self-Healing Loop for AI Agent Frameworks:
-    1. Wraps LangChain BaseTool / StructuredTool instances (`wrap_langchain_tools`)
-    2. Intercepts OpenAI / Anthropic `tool_calls` payloads (`intercept_openai_tool_call`)
+    Synchronous tool interception and explicit demonstration recovery:
+    1. Wraps synchronous callables; async-capable framework objects need explicit adapters
+    2. Intercepts OpenAI-format tool-call payloads (`intercept_openai_tool_call`)
     3. Provides an Autonomous Self-Healing Loop where `SAVEPOINT` rollbacks return
-       structured diagnostic observations to the LLM so it self-corrects on the next turn.
+       structured diagnostic observations to the LLM for a caller-controlled recovery attempt.
     """
 
-    def __init__(self, engine: ChronosEngine, self_heal: bool = True):
+    def __init__(self, engine: ChronosEngine, self_heal: bool = True, local_sql: bool = False):
+        self.local_sql = local_sql
         self.engine = engine
         self.self_heal = self_heal
 
@@ -30,15 +32,17 @@ class ChronosToolInterceptor:
         memory_state: Dict[str, Any],
         tool_name: Optional[str] = None,
     ) -> Callable:
-        """Wraps a Python tool function with Chronos SAVEPOINT Firewall + Semantic Cache."""
+        """Wraps a Python tool function with Chronos local ledger policies and tracing."""
         resolved_name = tool_name or getattr(fn, "name", getattr(fn, "__name__", "custom_tool"))
+
+        self.engine.firewall.allowed_tools.add(resolved_name)
 
         @wraps(fn)
         def _wrapped(*args, **kwargs) -> Dict[str, Any]:
-            payload = kwargs if kwargs else (args[0] if (len(args) == 1 and isinstance(args[0], dict)) else {"args": list(args)})
+            payload, bound = bind_tool_call(fn, args, kwargs)
 
             def _exec(inp: Dict[str, Any], mem: Dict[str, Any]) -> Dict[str, Any]:
-                res = fn(**inp) if kwargs else fn(*args)
+                res = fn(*bound.args, **bound.kwargs)
                 return res if isinstance(res, dict) else {"result": res}
 
             step = self.engine.record_step(
@@ -49,6 +53,7 @@ class ChronosToolInterceptor:
                 executor_fn=_exec,
                 memory_state=memory_state,
                 halt_on_block=not self.self_heal,
+                local_sql=self.local_sql,
             )
             return step.output_payload
 
@@ -68,10 +73,14 @@ class ChronosToolInterceptor:
         wrapped_tools = []
 
         for tool in tools:
+            if hasattr(tool, "ainvoke") or hasattr(tool, "_arun") or getattr(tool, "coroutine", None):
+                raise TypeError("Async-capable tool objects require an explicit synchronous callable adapter")
             # Duck-typing for LangChain BaseTool / StructuredTool objects
             if hasattr(tool, "_run") or hasattr(tool, "invoke"):
                 tool_name = getattr(tool, "name", tool.__class__.__name__)
-                orig_fn = getattr(tool, "func", None) or getattr(tool, "_run")
+                orig_fn = getattr(tool, "func", None) or getattr(tool, "_run", None)
+                if orig_fn is None:
+                    raise TypeError("invoke-only tools need an explicit callable adapter")
                 guarded_fn = self.wrap_callable(orig_fn, run=run, memory_state=mem, tool_name=tool_name)
                 if hasattr(tool, "func") and tool.func is not None:
                     tool.func = guarded_fn
@@ -101,7 +110,7 @@ class ChronosToolInterceptor:
         }
         Returns a ready-to-append OpenAI `role: "tool"` message dictionary.
         When blocked with `self_heal=True`, returns the SAVEPOINT rollback diagnostic inside `content`
-        so the model automatically corrects its query on the next completion turn.
+        so the caller can explicitly request a corrected action.
         """
         mem = memory_state if memory_state is not None else {}
         call_id = tool_call.get("id", "call_chronos_01")
@@ -113,14 +122,20 @@ class ChronosToolInterceptor:
             try:
                 parsed_args = json.loads(raw_args)
             except json.JSONDecodeError:
-                parsed_args = {"raw_arguments": raw_args}
+                raise ValueError("Tool arguments must be valid JSON")
         else:
             parsed_args = dict(raw_args)
 
-        target_fn = tool_registry.get(fn_name, lambda **kw: {"status": "EXECUTED", "args": kw})
+        if not isinstance(parsed_args, dict):
+            raise ValueError("Tool arguments must be an object")
+        if fn_name not in tool_registry:
+            raise ValueError("Tool is not registered")
+        target_fn = tool_registry[fn_name]
+        parsed_args, bound = bind_tool_call(target_fn, (), parsed_args)
+        self.engine.firewall.allowed_tools.add(fn_name)
 
         def _exec(inp: Dict[str, Any], m: Dict[str, Any]) -> Dict[str, Any]:
-            res = target_fn(**inp)
+            res = target_fn(*bound.args, **bound.kwargs)
             return res if isinstance(res, dict) else {"result": res}
 
         step = self.engine.record_step(
@@ -131,6 +146,7 @@ class ChronosToolInterceptor:
             executor_fn=_exec,
             memory_state=mem,
             halt_on_block=not self.self_heal,
+            local_sql=self.local_sql,
         )
 
         return {
@@ -143,7 +159,7 @@ class ChronosToolInterceptor:
 
     def run_self_healing_demo(self, scenario_type: str = "finops") -> AgentRun:
         """
-        Executes a live Autonomous Self-Healing Agent trace where:
+        Runs a predefined demo trace with no live model or payment/shell executor:
         1. The agent attempts a destructive/unscoped tool call (e.g. UPDATE without WHERE).
         2. Chronos ShadowFirewall intercepts it inside a real SQLite SAVEPOINT, rolls back 250 rows,
            and injects the structured `[CHRONOS_FIREWALL_BLOCKED]` feedback back to the agent (`halt_on_block=False`).
@@ -151,12 +167,13 @@ class ChronosToolInterceptor:
            and autonomously rewrites the SQL with `WHERE order_id = 'ORD-9921'`.
         4. Chronos verifies 1 row mutated in SAVEPOINT, commits (`RELEASE SAVEPOINT`), and completes the run!
         """
+        if not self.engine.demo_mode:
+            raise PermissionError("Demonstrations require explicit demo mode")
         if scenario_type == "sre":
             return self._run_sre_self_healing()
         return self._run_finops_self_healing()
 
     def _run_finops_self_healing(self) -> AgentRun:
-        self.engine.sandbox_db.reset_seed_data()
         run = self.engine.start_run(
             agent_name="FinOps-SelfHeal-Agent (LangGraph + Interceptor)",
             scenario="[Self-Healing Loop] Ticket #9921: Auto-recover from unscoped SQL via SAVEPOINT feedback",
@@ -214,7 +231,7 @@ class ChronosToolInterceptor:
                     "arguments": json.dumps(
                         {
                             "query": bad_sql,
-                            "database": "prod_ledger_primary",
+                            "database": "ledger",
                             "amount_usd": 120.0,
                         }
                     ),
@@ -267,7 +284,7 @@ class ChronosToolInterceptor:
                     "arguments": json.dumps(
                         {
                             "query": fixed_sql,
-                            "database": "prod_ledger_primary",
+                            "database": "ledger",
                             "amount_usd": 120.0,
                         }
                     ),
@@ -284,7 +301,7 @@ class ChronosToolInterceptor:
             memory_state=memory,
         )
 
-        run.status = "SELF_HEALED_SUCCESS"
+        run.status = "SELF_HEALED_SUCCESS" if run.steps[-1].status == "COMPLETED" else "HALTED_BY_FIREWALL"
         self.engine.storage.save_run(run.to_dict())
         return run
 
@@ -363,13 +380,14 @@ class ChronosToolInterceptor:
                     "exit_code": 0,
                     "freed_gb": 54.8,
                     "new_disk_usage_pct": 38.4,
-                    "status": "SELF_HEALED_AND_REMEDIATED",
+                    "status": "SIMULATED",
+                    "executed": False,
                 }
             },
             memory_state=memory,
         )
 
-        run.status = "SELF_HEALED_SUCCESS"
+        run.status = "SELF_HEALED_SUCCESS" if run.steps[-1].status == "COMPLETED" else "HALTED_BY_FIREWALL"
         self.engine.storage.save_run(run.to_dict())
         return run
 
@@ -378,18 +396,18 @@ INTEGRATION_SNIPPETS: Dict[str, str] = {
     "langchain": """from chronos import ChronosEngine, ChronosToolInterceptor
 
 engine = ChronosEngine()
-interceptor = ChronosToolInterceptor(engine, self_heal=True)
+interceptor = ChronosToolInterceptor(engine, self_heal=True, local_sql=True)
 
-# Wrap any LangChain / LangGraph tools in 1 line:
+# Adapt the underlying synchronous callable, then register the wrapper in your framework:
 run = engine.start_run("LangGraph-FinOps-Agent", "Customer Refund")
-safe_tools = interceptor.wrap_langchain_tools([execute_sql_tool, bash_tool], run=run)
+safe_sql = interceptor.wrap_callable(execute_sql_fn, run=run, memory_state={}, tool_name="execute_sql")
 
 # If the LLM generates an unscoped UPDATE/DELETE, Chronos rolls back at SQLite SAVEPOINT
-# and returns a [CHRONOS_FIREWALL_BLOCKED] observation so the agent self-heals!""",
+# and returns a [CHRONOS_FIREWALL_BLOCKED] observation for caller-controlled recovery.""",
     "openai": """from chronos import ChronosEngine, ChronosToolInterceptor
 
 engine = ChronosEngine()
-interceptor = ChronosToolInterceptor(engine, self_heal=True)
+interceptor = ChronosToolInterceptor(engine, self_heal=True, local_sql=True)
 run = engine.start_run("OpenAI-Tool-Agent", "Order Dispute")
 
 for tool_call in response.choices[0].message.tool_calls:
@@ -403,11 +421,11 @@ for tool_call in response.choices[0].message.tool_calls:
 
 sdk = ChronosSDK(ChronosEngine())
 
-@sdk.step(step_type="TOOL_CALL", name="execute_sql", self_heal=True)
-def execute_sql(query: str, database: str = "prod_ledger"):
+@sdk.step(step_type="TOOL_CALL", name="execute_sql", self_heal=True, local_sql=True)
+def execute_sql(query: str, database: str = "ledger"):
     return {"query": query, "status": "EXECUTED"}
 
 with sdk.trace_run("Custom-Python-Agent", "Refund Workflow"):
-    # Automatically inspected in SQLite SAVEPOINT + cached via 128-dim Semantic Vectors
+    # Explicit local ledger execution; external SQL callbacks are never invoked
     res = execute_sql(query="UPDATE orders SET status='REFUNDED' WHERE order_id='ORD-9921';")""",
 }

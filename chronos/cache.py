@@ -1,9 +1,13 @@
 """
-SubgraphCache — Hybrid Content-Addressable (SHA-256) & Semantic Vector Cosine Cache.
+SubgraphCache — Exact content-addressable cache with expiration.
+Vector helpers are diagnostics only; approximate results are never reused.
 Eliminates redundant LLM calls and re-executions across agent workflows while strictly
 guarding entity identifiers (e.g., ORD-9921 vs ORD-8888).
 """
 
+import copy
+from threading import RLock
+from .locking import synchronized
 import hashlib
 import json
 import math
@@ -61,14 +65,16 @@ class CacheEntry:
 
 class SubgraphCache:
     """
-    Caches deterministic agent sub-routines and validated LLM/tool subgraphs
-    using both exact SHA-256 content addressing and 128-dim Semantic Cosine Similarity
-    with strict entity ID verification.
+    Exact SHA-256 cache for explicitly pure computations, with bounded TTL/storage.
+    Vector helpers are retained for diagnostics only, never for cache reuse.
     """
 
     VECTOR_DIM = 128
 
-    def __init__(self, semantic_threshold: float = 0.86):
+    def __init__(self, semantic_threshold: float = 0.86, ttl_seconds: float = 300, max_entries: int = 1024):
+        self._lock = RLock()
+        self.ttl_seconds = ttl_seconds
+        self.max_entries = max_entries
         self._store: Dict[str, CacheEntry] = {}
         self._vectors: Dict[str, Tuple[str, str, Set[str], List[float]]] = {}
         self.semantic_threshold = semantic_threshold
@@ -87,7 +93,7 @@ class SubgraphCache:
             sort_keys=True,
             default=str,
         )
-        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
     @classmethod
     def _extract_entities(cls, text: str) -> Set[str]:
@@ -129,13 +135,17 @@ class SubgraphCache:
     def cosine_similarity(v1: List[float], v2: List[float]) -> float:
         return sum(a * b for a, b in zip(v1, v2))
 
+    @synchronized
     def lookup(
         self,
         step_type: str,
         name: str,
         input_payload: Dict[str, Any],
-        allow_semantic: bool = True,
+        allow_semantic: bool = False,
     ) -> Optional[CacheEntry]:
+        if allow_semantic:
+            raise ValueError("Approximate cache reuse is disabled; use exact context keys")
+        self._expire()
         key = self.compute_hash(step_type, name, input_payload)
         entry = self._store.get(key)
         if entry:
@@ -147,41 +157,12 @@ class SubgraphCache:
             self.total_tokens_saved += entry.tokens_saved_per_hit
             self.total_cost_saved_usd = round(self.total_cost_saved_usd + entry.cost_saved_per_hit_usd, 6)
             self.total_latency_saved_ms += entry.latency_saved_ms
-            return entry
-
-        # Fallback: Semantic Vector Cosine Lookup (with strict Entity ID guard)
-        if allow_semantic and self._vectors:
-            query_entities, query_vec = self.compute_semantic_vector(input_payload)
-            best_key: Optional[str] = None
-            best_score: float = 0.0
-
-            for cand_key, (cand_type, cand_name, cand_entities, cand_vec) in self._vectors.items():
-                if cand_type != step_type or cand_name != name:
-                    continue
-                # Strict entity ID guard: never match if order IDs or numbers differ
-                if cand_entities != query_entities:
-                    continue
-                sim = self.cosine_similarity(query_vec, cand_vec)
-                if sim >= self.semantic_threshold and sim > best_score:
-                    best_score = sim
-                    best_key = cand_key
-
-            if best_key and best_key in self._store:
-                sem_entry = self._store[best_key]
-                sem_entry.hits += 1
-                sem_entry.semantic_hits += 1
-                sem_entry.match_mode = "SEMANTIC_VECTOR"
-                sem_entry.similarity_score = round(best_score, 4)
-                self.total_hits += 1
-                self.semantic_hits += 1
-                self.total_tokens_saved += sem_entry.tokens_saved_per_hit
-                self.total_cost_saved_usd = round(self.total_cost_saved_usd + sem_entry.cost_saved_per_hit_usd, 6)
-                self.total_latency_saved_ms += sem_entry.latency_saved_ms
-                return sem_entry
+            return copy.deepcopy(entry)
 
         self.total_misses += 1
         return None
 
+    @synchronized
     def put(
         self,
         step_type: str,
@@ -193,13 +174,14 @@ class SubgraphCache:
         latency_ms: int,
     ) -> CacheEntry:
         key = self.compute_hash(step_type, name, input_payload)
-        entities, vec = self.compute_semantic_vector(input_payload)
-        self._vectors[key] = (step_type, name, entities, vec)
+        self._expire()
+        if key not in self._store and len(self._store) >= self.max_entries:
+            self._store.pop(next(iter(self._store)))
 
         entry = CacheEntry(
             subgraph_hash=key,
             intent_signature=f"{step_type}::{name}",
-            output_payload=output_payload,
+            output_payload=copy.deepcopy(output_payload),
             tokens_saved_per_hit=tokens,
             cost_saved_per_hit_usd=cost_usd,
             latency_saved_ms=latency_ms,
@@ -210,9 +192,22 @@ class SubgraphCache:
             similarity_score=1.0,
         )
         self._store[key] = entry
-        return entry
+        return copy.deepcopy(entry)
 
+    def _expire(self):
+        now = time.time()
+        for key in list(self._store):
+            if now - self._store[key].created_at >= self.ttl_seconds:
+                del self._store[key]
+
+    @synchronized
+    def clear(self):
+        self._store.clear()
+        self._vectors.clear()
+
+    @synchronized
     def stats(self) -> Dict[str, Any]:
+        self._expire()
         total_requests = self.total_hits + self.total_misses
         hit_rate = (self.total_hits / total_requests * 100.0) if total_requests > 0 else 0.0
         return {
@@ -222,7 +217,9 @@ class SubgraphCache:
             "semantic_hits": self.semantic_hits,
             "total_misses": self.total_misses,
             "hit_rate_pct": round(hit_rate, 1),
-            "semantic_threshold": self.semantic_threshold,
+            "semantic_threshold": None,
+            "match_policy": "EXACT_ONLY",
+            "ttl_seconds": self.ttl_seconds,
             "total_tokens_saved": self.total_tokens_saved,
             "total_cost_saved_usd": round(self.total_cost_saved_usd, 4),
             "total_latency_saved_ms": self.total_latency_saved_ms,
