@@ -1,5 +1,5 @@
 """
-Chronos MCP Server — Official Model Context Protocol (JSON-RPC 2.0) Implementation.
+Chronos MCP Server — Local tool interface using MCP-style JSON-RPC over stdio/HTTP.
 Can be run via stdio (`python -m chronos.mcp_server`) for Claude Desktop, Cursor & Antigravity,
 or mounted directly at `POST /mcp` on the FastAPI Control Plane.
 """
@@ -17,7 +17,7 @@ MCP_TOOLS = [
         "name": "chronos_inspect_tool",
         "description": (
             "Inspects and simulates a candidate tool call (SQL, Bash, or Stripe payment) inside the "
-            "Chronos ShadowFirewall & SQLite SAVEPOINT sandbox before production execution."
+            "Chronos ShadowFirewall & SQLite SAVEPOINT sandbox against the configured local ledger; external services are not executed."
         ),
         "inputSchema": {
             "type": "object",
@@ -37,7 +37,7 @@ MCP_TOOLS = [
     {
         "name": "chronos_execute_safe_sql",
         "description": (
-            "Executes a SQL query against the SQLite production ledger inside a protected SAVEPOINT. "
+            "Executes a SQL query against the configured local SQLite ledger inside a protected SAVEPOINT. "
             "Automatically rolls back if more than 1 row is mutated or if WHERE is omitted."
         ),
         "inputSchema": {
@@ -53,7 +53,7 @@ MCP_TOOLS = [
     },
     {
         "name": "chronos_run_agent_prompt",
-        "description": "Runs a natural-language task through the Chronos Live Agent with full Time-Travel DAG recording.",
+        "description": "Runs a natural-language task through the Chronos Live Agent with sequential trace recording.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -82,10 +82,14 @@ class ChronosMCPServer:
     """
 
     def __init__(self, engine: Optional[ChronosEngine] = None):
-        self.engine = engine or ChronosEngine()
+        self.engine = engine or ChronosEngine.from_environment()
         self.live_agent = LiveLLMAgent(self.engine)
 
     def handle_jsonrpc(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if (not isinstance(request, dict) or request.get("jsonrpc") != "2.0"
+                or not isinstance(request.get("method"), str)
+                or not isinstance(request.get("params", {}), dict)):
+            return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
         method = request.get("method", "")
         req_id = request.get("id")
         params = request.get("params") or {}
@@ -103,7 +107,7 @@ class ChronosMCPServer:
                     "capabilities": {"tools": {}},
                     "serverInfo": {
                         "name": "chronos-mcp-firewall",
-                        "version": "0.2.0",
+                        "version": "0.5.0",
                     },
                 },
             }
@@ -145,6 +149,8 @@ class ChronosMCPServer:
         }
 
     def _dispatch_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(arguments, dict):
+            raise ValueError("Tool arguments must be an object")
         if tool_name == "chronos_inspect_tool":
             res = self.engine.firewall.inspect_tool_call(
                 arguments.get("tool_name", "execute_sql"),
@@ -154,12 +160,13 @@ class ChronosMCPServer:
             return res.to_dict()
 
         if tool_name == "chronos_execute_safe_sql":
-            res = self.engine.firewall.inspect_tool_call(
-                "execute_sql",
-                {"query": arguments.get("query", "")},
-                commit_if_safe=True,
-            )
-            return res.to_dict()
+            run = self.engine.start_run("MCP-SQL", "Explicit local ledger SQL")
+            step = self.engine.record_step(run, "TOOL_CALL", "execute_sql",
+                {"query": arguments.get("query", "")}, lambda i, m: {}, {}, use_cache=False)
+            if run.status == "RUNNING":
+                run.status = "COMPLETED"
+            self.engine.storage.save_run(run.to_dict())
+            return {**step.policy_result, "run_id": run.run_id, "output": step.output_payload}
 
         if tool_name == "chronos_run_agent_prompt":
             run = self.live_agent.run_prompt(arguments.get("prompt", ""))

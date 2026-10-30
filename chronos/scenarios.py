@@ -15,6 +15,8 @@ def run_finops_incident_scenario(engine: ChronosEngine, use_cache: bool = True) 
     At Step 5, the agent attempts an unbounded SQL UPDATE without a WHERE clause, which is blocked
     by Chronos ShadowFirewall after simulating a $45.6M blast radius.
     """
+    if not engine.demo_mode:
+        raise PermissionError("Demonstrations require explicit demo mode")
     run = engine.start_run(
         agent_name="FinOps-Autonomous-v4",
         scenario="Ticket #TKT-8841: Duplicate Charge Refund & Ledger Sync (Order ORD-9921)",
@@ -111,7 +113,7 @@ def run_finops_incident_scenario(engine: ChronosEngine, use_cache: bool = True) 
         name="execute_sql",
         input_payload={
             "query": memory.get("candidate_sql", "UPDATE orders SET status = 'REFUNDED', refund_usd = 120.0;"),
-            "database": "prod_ledger_primary",
+            "database": "ledger",
         },
         executor_fn=lambda inp, mem: {"rows_affected": 912400},
         memory_state=memory,
@@ -179,7 +181,7 @@ def continue_forked_finops_run(
         name="execute_sql",
         input_payload={
             "query": sql_to_run,
-            "database": patched_input.get("database", "prod_ledger_primary"),
+            "database": patched_input.get("database", "ledger"),
         },
         executor_fn=lambda inp, mem: {
             "status": "COMMITTED_SAFELY",
@@ -209,7 +211,8 @@ def continue_forked_finops_run(
             executor_fn=lambda inp, mem: {
                 "refund_id": "re_9921_chronos_verified",
                 "amount_refunded_usd": amount,
-                "status": "SUCCEEDED",
+                "status": "SIMULATED",
+                "executed": False,
                 "memory_updates": {"workflow_completed": True},
             },
             memory_state=restored_memory,
@@ -225,6 +228,8 @@ def run_sre_secops_scenario(engine: ChronosEngine) -> AgentRun:
     Simulates a Kubernetes SRE Auto-Remediation Agent that diagnoses disk pressure
     and attempts a destructive `rm -rf` command, blocked by ShadowFirewall rule SYS-001.
     """
+    if not engine.demo_mode:
+        raise PermissionError("Demonstrations require explicit demo mode")
     run = engine.start_run(
         agent_name="K8s-SecOps-AutoHealer",
         scenario="Alert #ALT-309: Node DiskPressure 94% on prod-us-east-cluster",
